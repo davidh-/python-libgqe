@@ -24,14 +24,38 @@ ax1.set_ylabel("cpm")
 line_emf, = ax2.plot(x, y_emf)
 ax2.set_ylabel("emf")
 
+# Loop until a successful response is received for the first command
+while True:
+    try:
+        subprocess.check_output(["/home/pi/python-libgqe/gqe-cli", "/dev/ttyUSB1", "--unit", "GMC500Plus", "--revision", "'Re 2.42'", "--power", "true"])
+        break
+    except subprocess.CalledProcessError:
+        print("Error: Unable to execute command for GMC500Plus. Retrying...")
+        
+# Loop until a successful response is received for the second command
+while True:
+    try:
+        subprocess.check_output(["/home/pi/python-libgqe/gqe-cli", "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--power", "true"])
+        break
+    except subprocess.CalledProcessError:
+        print("Error: Unable to execute command for GQEMF390. Retrying...")
+
 def update(frame):
-    output_cpm = subprocess.check_output(["./gqe-cli", "/dev/ttyUSB1", "--unit", "GMC500Plus", "--revision", "'Re 2.42'", "--get-cpm"])
-    cpm = float(output_cpm.decode().strip())
-    print(cpm)
-    
-    output_emf = subprocess.check_output(["./gqe-cli", "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--get-emf"])
-    emf = float(output_emf.decode().split(' ')[0])
-    print(emf)
+    try:
+        output_cpm = subprocess.check_output(["/home/pi/python-libgqe/gqe-cli", "/dev/ttyUSB1", "--unit", "GMC500Plus", "--revision", "'Re 2.42'", "--get-cpm"])
+        cpm = float(output_cpm.decode().strip())
+        print(cpm)
+    except subprocess.CalledProcessError as e:
+        print(f"Error getting cpm: {e}")
+        cpm = 0.0
+
+    try:
+        output_emf = subprocess.check_output(["/home/pi/python-libgqe/gqe-cli", "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--get-emf"])
+        emf = float(output_emf.decode().split(' ')[0])
+        print(emf)
+    except subprocess.CalledProcessError as e:
+        print(f"Error getting emf: {e}")
+        emf = 0.0
     
     now = datetime.datetime.now()
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")

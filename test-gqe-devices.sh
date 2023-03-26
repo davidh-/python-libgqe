@@ -1,4 +1,7 @@
 # debugging usb hub adapater 2/21/23
+./gqe-cli /dev/ttyUSB1 --unit GMC500Plus --revision 'Re 2.42' --power true
+./gqe-cli /dev/ttyUSB0 --unit GQEMF390 --revision 'Re 3.70'  --power true
+
 i=0
 while [ $i -le 100000 ]
 do
