@@ -5,12 +5,15 @@ import numpy as np
 import datetime
 import os
 
-data_file = "data.csv"
+pro_dir = "/home/pi/python-libgqe/"
 
-# Check if the data file exists, create it with the header if it doesn't
-if not os.path.isfile(data_file):
-    with open(data_file, "w") as f:
-        f.write("date-time,cpm,emf\n")
+now = datetime.datetime.now()
+timestamp = now.strftime("%Y-%m-%d-%H:%M:%S")
+
+data_file = pro_dir + timestamp + ".csv"
+with open(data_file, "w") as f:
+    f.write("date-time,cpm,emf\n")
+    
 
 x = []
 y_cpm = []
@@ -24,10 +27,12 @@ ax1.set_ylabel("cpm")
 line_emf, = ax2.plot(x, y_emf)
 ax2.set_ylabel("emf")
 
+gqe_cli_dir = pro_dir + "gqe-cli"
+
 # Loop until a successful response is received for the first command
 while True:
     try:
-        subprocess.check_output(["/home/pi/python-libgqe/gqe-cli", "/dev/ttyUSB1", "--unit", "GMC500Plus", "--revision", "'Re 2.42'", "--power", "true"])
+        subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB1", "--unit", "GMC500Plus", "--revision", "'Re 2.42'", "--power", "true"])
         break
     except subprocess.CalledProcessError:
         print("Error: Unable to execute command for GMC500Plus. Retrying...")
@@ -35,14 +40,14 @@ while True:
 # Loop until a successful response is received for the second command
 while True:
     try:
-        subprocess.check_output(["/home/pi/python-libgqe/gqe-cli", "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--power", "true"])
+        subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--power", "true"])
         break
     except subprocess.CalledProcessError:
         print("Error: Unable to execute command for GQEMF390. Retrying...")
 
 def update(frame):
     try:
-        output_cpm = subprocess.check_output(["/home/pi/python-libgqe/gqe-cli", "/dev/ttyUSB1", "--unit", "GMC500Plus", "--revision", "'Re 2.42'", "--get-cpm"])
+        output_cpm = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB1", "--unit", "GMC500Plus", "--revision", "'Re 2.42'", "--get-cpm"])
         cpm = float(output_cpm.decode().strip())
         print(cpm)
     except subprocess.CalledProcessError as e:
@@ -50,7 +55,7 @@ def update(frame):
         cpm = 0.0
 
     try:
-        output_emf = subprocess.check_output(["/home/pi/python-libgqe/gqe-cli", "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--get-emf"])
+        output_emf = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--get-emf"])
         emf = float(output_emf.decode().split(' ')[0])
         print(emf)
     except subprocess.CalledProcessError as e:
