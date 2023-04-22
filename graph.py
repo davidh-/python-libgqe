@@ -15,20 +15,28 @@ timestamp = now.strftime("%Y-%m-%d-%H:%M:%S")
 
 data_file = pro_dir + timestamp + ".csv"
 with open(data_file, "w") as f:
-    f.write("date-time,cpm,emf\n")
+    f.write("date-time,cpm,emf,rf,ef\n")
     
 
 x = []
 y_cpm = []
 y_emf = []
+y_rf = []
+y_ef = []
 
-fig, (ax1, ax2) = plt.subplots(nrows=2, sharex=True)
+fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=4, sharex=True)
 
 line_cpm, = ax1.plot(x, y_cpm)
 ax1.set_ylabel("cpm")
 
 line_emf, = ax2.plot(x, y_emf)
-ax2.set_ylabel("emf")
+ax2.set_ylabel("emf\n(mG)")
+
+line_rf, = ax3.plot(x, y_rf)
+ax3.set_ylabel("rf\n(mW/m2)")
+
+line_ef, = ax4.plot(x, y_ef)
+ax4.set_ylabel("ef\n(V/m)")
 
 gqe_cli_dir = pro_dir + "gqe-cli"
 
@@ -52,7 +60,7 @@ def update(frame):
     try:
         output_cpm = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB1", "--unit", "GMC500Plus", "--revision", "'Re 2.42'", "--get-cpm"])
         cpm = float(output_cpm.decode().strip())
-        print(cpm)
+        print("cpm:", cpm)
     except subprocess.CalledProcessError as e:
         print(f"Error getting cpm: {e}")
         cpm = 0.0
@@ -60,35 +68,70 @@ def update(frame):
     try:
         output_emf = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--get-emf"])
         emf = float(output_emf.decode().split(' ')[0])
-        print(emf)
+        print("emf:", emf)
     except subprocess.CalledProcessError as e:
         print(f"Error getting emf: {e}")
         emf = 0.0
+
+    try:
+        output_rf = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--get-rf", "TOTALDENSITY"])
+        rf = float(output_rf.decode().strip().split(" ")[0])
+        # ~ print(rf_str)
+        # ~ if "mW" in rf_str:
+            # ~ rf = float(rf_str.replace("mW/m2", ""))
+        # ~ else:
+            # ~ rf = float(rf_str.replace("W/m2", "")) * 1000
+        print("rf:", rf)
+    except subprocess.CalledProcessError as e:
+        print(f"Error getting rf: {e}")
+        rf = 0.0
+
+    try:
+        output_ef = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--get-ef"])
+        ef = float(output_ef.decode().split(' ')[0])
+        print("ef:", ef)
+    except subprocess.CalledProcessError as e:
+        print(f"Error getting ef: {e}")
+        ef = 0.0
     
     now = datetime.datetime.now()
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
     with open(data_file, "a") as f:
-        f.write(f"{timestamp},{cpm},{emf}\n")
+        f.write(f"{timestamp},{cpm},{emf},{rf},{ef}\n")
 
     x.append(len(x))
     y_cpm.append(cpm)
     y_emf.append(emf)
+    y_rf.append(rf)
+    y_ef.append(ef)
 
     line_cpm.set_xdata(x)
     line_cpm.set_ydata(y_cpm)
+    
     line_emf.set_xdata(x)
     line_emf.set_ydata(y_emf)
+    
+    line_rf.set_xdata(x)
+    line_rf.set_ydata(y_rf)
+
+    line_ef.set_xdata(x)
+    line_ef.set_ydata(y_ef)
 
     # Manually set the x-limits to match the length of the x array
     ax1.set_xlim([0, len(x)])
     ax2.set_xlim([0, len(x)])
+    ax3.set_xlim([0, len(x)])
+    ax4.set_xlim([0, len(x)])
 
     ax1.relim()
     ax1.autoscale_view()
     ax2.relim()
     ax2.autoscale_view()
-
-    return line_cpm, line_emf
+    ax3.relim()
+    ax3.autoscale_view()    
+    ax4.relim()
+    ax4.autoscale_view()
+    return line_cpm, line_emf, line_rf, line_ef
 
 
 ani = animation.FuncAnimation(fig, update, interval=100)
