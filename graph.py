@@ -4,6 +4,8 @@ import matplotlib.animation as animation
 import numpy as np
 import datetime
 import os
+from gps3 import agps3
+
 
 os.environ["DISPLAY"] = ":0.0"
 os.environ["XAUTHORITY"] = "/home/pi/.Xauthority"
@@ -15,14 +17,22 @@ timestamp = now.strftime("%Y-%m-%d-%H:%M:%S")
 
 data_file = pro_dir + timestamp + ".csv"
 with open(data_file, "w") as f:
-    f.write("date-time,cpm,emf,rf,ef\n")
+    f.write("date-time,cpm,emf,rf,ef,altitude,latitude,longitude\n")
     
+gps_socket = agps3.GPSDSocket()
+data_stream = agps3.DataStream()
+gps_socket.connect()
+gps_socket.watch()
+
 
 x = []
 y_cpm = []
 y_emf = []
 y_rf = []
 y_ef = []
+y_lat = []
+y_lon = []
+y_alt = []
 
 fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=4, sharex=True)
 
@@ -57,6 +67,23 @@ while True:
         print("Error: Unable to execute command for GQEMF390. Retrying...")
 
 def update(frame):
+    
+    end = False
+    for new_data in gps_socket:
+        if new_data:
+            data_stream.unpack(new_data)
+            alt = data_stream.alt
+            lat = data_stream.lat
+            lon = data_stream.lon
+            if isinstance(alt, float):
+                alt = alt * 3.28084
+                print('alt:', alt)
+                print('lat:', lat)
+                print('lon:', lon)
+                end = True
+            if end is True:
+                break
+    
     try:
         output_cpm = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB1", "--unit", "GMC500Plus", "--revision", "'Re 2.42'", "--get-cpm"])
         cpm = float(output_cpm.decode().strip())
@@ -97,7 +124,7 @@ def update(frame):
     now = datetime.datetime.now()
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
     with open(data_file, "a") as f:
-        f.write(f"{timestamp},{cpm},{emf},{rf},{ef}\n")
+        f.write(f"{timestamp},{cpm},{emf},{rf},{ef}, {alt},{lat},{lon}\n")
 
     x.append(len(x))
     y_cpm.append(cpm)
