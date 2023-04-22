@@ -5,6 +5,9 @@ import numpy as np
 import datetime
 import os
 
+os.environ["DISPLAY"] = ":0.0"
+os.environ["XAUTHORITY"] = "/home/pi/.Xauthority"
+
 pro_dir = "/home/pi/python-libgqe/"
 
 now = datetime.datetime.now()
