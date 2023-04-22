@@ -36,6 +36,9 @@ y_alt = []
 
 fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=4, sharex=True)
 
+# Set the figure location to (x=0,y=0) on the screen
+fig.canvas.manager.window.move(0, 0)
+
 line_cpm, = ax1.plot(x, y_cpm)
 ax1.set_ylabel("cpm")
 
@@ -83,6 +86,8 @@ def update(frame):
                 end = True
             if end is True:
                 break
+    # show GPS data on the plot
+    ax1.set_title(f"Latitude: {round(lat,5)}, Longitude: {round(lon, 5)}, Altitude: {round(alt, 2)} ft")
     
     try:
         output_cpm = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB1", "--unit", "GMC500Plus", "--revision", "'Re 2.42'", "--get-cpm"])
