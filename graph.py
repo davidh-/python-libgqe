@@ -15,7 +15,7 @@ pro_dir = "/home/pi/python-libgqe/"
 now = datetime.datetime.now()
 timestamp = now.strftime("%Y-%m-%d-%H:%M:%S")
 
-data_file = pro_dir + timestamp + ".csv"
+data_file = pro_dir + "/data/" + timestamp + ".csv"
 with open(data_file, "w") as f:
     f.write("date-time,cpm,emf,rf,ef,altitude,latitude,longitude\n")
     
@@ -69,6 +69,9 @@ while True:
     except subprocess.CalledProcessError:
         print("Error: Unable to execute command for GQEMF390. Retrying...")
 
+
+
+
 def update(frame):
     
     end = False
@@ -80,50 +83,36 @@ def update(frame):
             lon = data_stream.lon
             if isinstance(alt, float):
                 alt = alt * 3.28084
-                print('alt:', alt)
-                print('lat:', lat)
-                print('lon:', lon)
+                # print('alt:', alt)
+                # print('lat:', lat)
+                # print('lon:', lon)
                 end = True
             if end is True:
                 break
+                
     # show GPS data on the plot
     ax1.set_title(f"Latitude: {round(lat,5)}, Longitude: {round(lon, 5)}, Altitude: {round(alt, 2)} ft")
     
     try:
         output_cpm = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB1", "--unit", "GMC500Plus", "--revision", "'Re 2.42'", "--get-cpm"])
         cpm = float(output_cpm.decode().strip())
-        print("cpm:", cpm)
+        # print("\ncpm:", cpm)
     except subprocess.CalledProcessError as e:
         print(f"Error getting cpm: {e}")
         cpm = 0.0
 
     try:
-        output_emf = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--get-emf"])
-        emf = float(output_emf.decode().split(' ')[0])
-        print("emf:", emf)
+        output_emf_rf_ef = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--get-emf", "--get-rf", "TOTALDENSITY", "--get-ef"])
+        output_list = output_emf_rf_ef.decode().split('\n')
+        # print("output _list:", output_list)
+        emf = float(output_list[0].split(" ")[0])
+        rf = float(output_list[1].strip().split(" ")[0])
+        ef = float(output_list[2].split(' ')[0])
+        # print("emf:", emf, "\nrf:", rf, "\nef", ef) 
     except subprocess.CalledProcessError as e:
-        print(f"Error getting emf: {e}")
+        #print(f"Error getting GQEMF390 data")
         emf = 0.0
-
-    try:
-        output_rf = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--get-rf", "TOTALDENSITY"])
-        rf = float(output_rf.decode().strip().split(" ")[0])
-        # ~ print(rf_str)
-        # ~ if "mW" in rf_str:
-            # ~ rf = float(rf_str.replace("mW/m2", ""))
-        # ~ else:
-            # ~ rf = float(rf_str.replace("W/m2", "")) * 1000
-        print("rf:", rf)
-    except subprocess.CalledProcessError as e:
-        print(f"Error getting rf: {e}")
         rf = 0.0
-
-    try:
-        output_ef = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--get-ef"])
-        ef = float(output_ef.decode().split(' ')[0])
-        print("ef:", ef)
-    except subprocess.CalledProcessError as e:
-        print(f"Error getting ef: {e}")
         ef = 0.0
     
     now = datetime.datetime.now()
@@ -166,6 +155,6 @@ def update(frame):
     return line_cpm, line_emf, line_rf, line_ef
 
 
-ani = animation.FuncAnimation(fig, update, interval=100)
+ani = animation.FuncAnimation(fig, update, interval=1)
 
 plt.show()
