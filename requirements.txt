@@ -1,2 +1,4 @@
 pySerial
 PyYAML
+matplotlib=3.7.1
+gps3=0.33.3

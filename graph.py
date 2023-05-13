@@ -69,6 +69,7 @@ arg_power_on = "true"
 
 # Check if devices port is correct 
 # Loop until a successful response is received for the first command
+stop_try_500 = False
 while True:
     try:
         subprocess.check_output([gqe_cli_dir, port_500, arg_unit, name_500, arg_revision, ver_500, unit_500_get_cpm])
@@ -76,8 +77,12 @@ while True:
         print(f"Successfull port and power on for {name_500}. Port is {port_500}.")
         break
     except subprocess.CalledProcessError:
+        if stop_try_500:
+            print(f"Error: Unable to execute command for {name_500}. Skipping.")
+            break
         print(f"Error: Unable to execute command for {name_500}. Changing default ports. Retrying...")
         port_500, port_390 = port_390, port_500
+        stop_try_500 = True
 
 try:
     subprocess.check_output([gqe_cli_dir, port_390, arg_unit, name_390, arg_revision, ver_390, unit_390_get_emf])

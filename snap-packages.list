@@ -1,0 +1,5 @@
+# run 'sudo visudo'
+# add ":/snap/bin" to end of line where it reads 
+# #Defaults secure_path="usr/local/sbin..."
+
+sublime-text --classic 
