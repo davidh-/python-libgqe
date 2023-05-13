@@ -4,6 +4,7 @@ import matplotlib.animation as animation
 import numpy as np
 import datetime
 import os
+import time
 from gps3 import agps3
 
 
@@ -19,10 +20,16 @@ data_file = pro_dir + "/data/" + timestamp + ".csv"
 with open(data_file, "w") as f:
     f.write("date-time,cpm,emf,rf,ef,altitude,latitude,longitude\n")
     
-gps_socket = agps3.GPSDSocket()
-data_stream = agps3.DataStream()
-gps_socket.connect()
-gps_socket.watch()
+# ~ gps_socket = agps3.GPSDSocket()
+# ~ data_stream = agps3.DataStream()
+# ~ gps_socket.connect()
+# ~ gps_socket.watch()
+
+from gps3.agps3threaded import AGPS3mechanism
+agps_thread = AGPS3mechanism()  # Instantiate AGPS3 Mechanisms
+agps_thread.stream_data()  # From localhost (), or other hosts, by example, (host='gps.ddns.net')
+agps_thread.run_thread()  # Throttle time to sleep after an empty lookup, default '()' 0.2 two tenths of a second
+
 
 
 x = []
@@ -53,64 +60,108 @@ ax4.set_ylabel("ef\n(V/m)")
 
 gqe_cli_dir = pro_dir + "gqe-cli"
 
+name_500 = "GMC500Plus"
+port_500 = "/dev/ttyUSB0"
+ver_500 = "'Re 2.42'"
+unit_500_get_cpm = "--get-cpm"
+
+name_390 = "GQEMF390"
+port_390 = "/dev/ttyUSB1"
+ver_390 = "'Re 3.70'"
+unit_390_get_emf = "--get-emf"
+
+arg_unit = "--unit"
+arg_revision = "--revision"
+arg_power = "--power"
+arg_power_on = "true"
+
+
+# Check if devices port is correct 
 # Loop until a successful response is received for the first command
 while True:
     try:
-        subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB1", "--unit", "GMC500Plus", "--revision", "'Re 2.42'", "--power", "true"])
+        subprocess.check_output([gqe_cli_dir, port_500, arg_unit, name_500, arg_revision, ver_500, unit_500_get_cpm])
+        subprocess.check_output([gqe_cli_dir, port_500, arg_unit, name_500, arg_revision, ver_500, arg_power, arg_power_on])
+        print(f"Successfull port and power on for {name_500}. Port is {port_500}.")
         break
     except subprocess.CalledProcessError:
-        print("Error: Unable to execute command for GMC500Plus. Retrying...")
-        
-# Loop until a successful response is received for the second command
-while True:
-    try:
-        subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--power", "true"])
-        break
-    except subprocess.CalledProcessError:
-        print("Error: Unable to execute command for GQEMF390. Retrying...")
+        print(f"Error: Unable to execute command for {name_500}. Changing default ports. Retrying...")
+        port_500, port_390 = port_390, port_500
 
+try:
+    subprocess.check_output([gqe_cli_dir, port_390, arg_unit, name_390, arg_revision, ver_390, unit_390_get_emf])
+    subprocess.check_output([gqe_cli_dir, port_390, arg_unit, name_390, arg_revision, ver_390, arg_power, arg_power_on])
+    print(f"Successfull port and power on for {name_390}. Port is {port_390}.")
+except subprocess.CalledProcessError:
+    print(f"Error: Unable to execute command for {name_390}. Something wrong. Check physical connections.")
+    exit()
+        
 
 
 
 def update(frame):
+    # ~ print("1")
+    # ~ end = False
+    # ~ # record start time
+    # ~ start = time.time()
+    # ~ print(gps_socket)
+    # ~ alt = 0.0
+    # ~ lat = 0.0
+    # ~ lon = 0.0
+    # ~ lon = 0.0
+    # ~ for new_data in gps_socket:
+        # ~ print("new_data", new_data)
+        # ~ end = time.time()
+        # ~ if new_data:
+            # ~ data_stream.unpack(new_data)
+            # ~ alt = data_stream.alt
+            # ~ lat = data_stream.lat
+            # ~ lon = data_stream.lon
+            # ~ print(alt, lat, lon)
+            # ~ if isinstance(alt, float):
+                # ~ alt = alt * 3.28084
+                # ~ # print('alt:', alt)
+                # ~ # print('lat:', lat)
+                # ~ # print('lon:', lon)
+                # ~ end = True
+            # ~ if end is True:
+                # ~ break
+        # ~ # in case gps never locks
+        # ~ elif end - start > 0.001:
+            # ~ break
+    # ~ print("2")
+    # ~ # show GPS data on the plot
     
-    end = False
-    for new_data in gps_socket:
-        if new_data:
-            data_stream.unpack(new_data)
-            alt = data_stream.alt
-            lat = data_stream.lat
-            lon = data_stream.lon
-            if isinstance(alt, float):
-                alt = alt * 3.28084
-                # print('alt:', alt)
-                # print('lat:', lat)
-                # print('lon:', lon)
-                end = True
-            if end is True:
-                break
-                
-    # show GPS data on the plot
+    alt = agps_thread.data_stream.alt * 3.28084
+    if alt == "n/a":
+        alt = 0
+        lat = 0
+        lon = 0
+    else:
+        lat = agps_thread.data_stream.lat
+        lon = agps_thread.data_stream.lon
+
+    # ~ print('alt:', alt)
+    # ~ print('lat:', lat)
+    # ~ print('lon:', lon)
     ax1.set_title(f"Latitude: {round(lat,5)}, Longitude: {round(lon, 5)}, Altitude: {round(alt, 2)} ft")
     
     try:
-        output_cpm = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB1", "--unit", "GMC500Plus", "--revision", "'Re 2.42'", "--get-cpm"])
+        output_cpm = subprocess.check_output([gqe_cli_dir, port_500, arg_unit, name_500, arg_revision, ver_500, unit_500_get_cpm])
         cpm = float(output_cpm.decode().strip())
         # print("\ncpm:", cpm)
     except subprocess.CalledProcessError as e:
-        print(f"Error getting cpm: {e}")
-        cpm = 0.0
-
+        print(f"Error getting GMC500Plus cpm: {e}")
+        cpm = 0
     try:
-        output_emf_rf_ef = subprocess.check_output([gqe_cli_dir, "/dev/ttyUSB0", "--unit", "GQEMF390", "--revision", "'Re 3.70'", "--get-emf", "--get-rf", "TOTALDENSITY", "--get-ef"])
+        output_emf_rf_ef = subprocess.check_output([gqe_cli_dir, port_390, arg_unit, name_390, arg_revision, ver_390, unit_390_get_emf, "--get-rf", "TOTALDENSITY", "--get-ef"])
         output_list = output_emf_rf_ef.decode().split('\n')
-        # print("output _list:", output_list)
         emf = float(output_list[0].split(" ")[0])
         rf = float(output_list[1].strip().split(" ")[0])
         ef = float(output_list[2].split(' ')[0])
         # print("emf:", emf, "\nrf:", rf, "\nef", ef) 
     except subprocess.CalledProcessError as e:
-        #print(f"Error getting GQEMF390 data")
+        print(f"Error getting GQEMF390 data: {e}")
         emf = 0.0
         rf = 0.0
         ef = 0.0
