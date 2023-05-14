@@ -93,12 +93,13 @@ except subprocess.CalledProcessError:
     exit()
         
 def update(frame):
-    alt = agps_thread.data_stream.alt * 3.28084
+    alt = agps_thread.data_stream.alt 
     if alt == "n/a":
         alt = 0
         lat = 0
         lon = 0
     else:
+        alt = alt * 3.28084
         lat = agps_thread.data_stream.lat
         lon = agps_thread.data_stream.lon
 
@@ -162,6 +163,9 @@ def update(frame):
     return line_cpm, line_emf, line_rf, line_ef
 
 
-ani = animation.FuncAnimation(fig, update, interval=1)
+ani = animation.FuncAnimation(fig, update, interval=1, cache_frame_data=False)
 
 plt.show()
+
+
+# need to update code so only last 10 minutes shows on graph
