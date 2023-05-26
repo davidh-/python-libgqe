@@ -24,6 +24,12 @@ agps_thread = AGPS3mechanism()  # Instantiate AGPS3 Mechanisms
 agps_thread.stream_data()  # From localhost (), or other hosts, by example, (host='gps.ddns.net')
 agps_thread.run_thread()  # Throttle time to sleep after an empty lookup, default '()' 0.2 two tenths of a second
 
+# from gps3 import gps3
+# gpsd_socket = gps3.GPSDSocket()
+# data_stream = gps3.DataStream()
+# gpsd_socket.connect()
+# gpsd_socket.watch()
+
 x = []
 y_cpm = []
 y_emf = []
@@ -94,6 +100,7 @@ except subprocess.CalledProcessError:
         
 def update(frame):
     alt = agps_thread.data_stream.alt 
+    # print(alt)
     if alt == "n/a":
         alt = 0
         lat = 0
@@ -102,6 +109,25 @@ def update(frame):
         alt = alt * 3.28084
         lat = agps_thread.data_stream.lat
         lon = agps_thread.data_stream.lon
+    # start = time.time()
+    # for new_data in gpsd_socket:
+    #     end = time.time()
+    #     timer = end - start
+    #     print(timer)
+    #     if timer > 0.5:
+    #         alt = 0
+    #         lat = 0
+    #         lon = 0
+    #         break
+    #     if new_data:
+    #         data_stream.unpack(new_data)
+    #         alt = data_stream.TPV['alt']
+    #         lat = data_stream.TPV['lat']
+    #         lon = data_stream.TPV['lon']
+    #         if isinstance(alt, float):
+    #             alt = alt * 3.28084
+    #             break
+
 
     ax1.set_title(f"Latitude: {round(lat,5)}, Longitude: {round(lon, 5)}, Altitude: {round(alt, 2)} ft")
     
