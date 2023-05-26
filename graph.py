@@ -19,7 +19,18 @@ data_file = pro_dir + "/data/" + timestamp + ".csv"
 with open(data_file, "w") as f:
     f.write("date-time,cpm,emf,rf,ef,altitude,latitude,longitude\n")
 
+from gps3.agps3threaded import AGPS3mechanism
+agps_thread = AGPS3mechanism()  # Instantiate AGPS3 Mechanisms
+agps_thread.stream_data()  # From localhost (), or other hosts, by example, (host='gps.ddns.net')
+agps_thread.run_thread()  # Throttle time to sleep after an empty lookup, default '()' 0.2 two tenths of a second
 
+
+
+# from gps3 import gps3
+# gpsd_socket = gps3.GPSDSocket()
+# data_stream = gps3.DataStream()
+# gpsd_socket.connect()
+# gpsd_socket.watch()
 
 x = []
 y_cpm = []
@@ -90,26 +101,34 @@ except subprocess.CalledProcessError:
     exit()
         
 def update(frame):
-    alt = 0
-    lat = 0
-    lon = 0
-    skip_gps = 0
-    with GPSDClient() as client:
-        for result in client.dict_stream(convert_datetime=True, filter=["TPV", "SKY"]):
-            alt = result.get("alt", "n/a")
-            print("Alt: %s" % alt)
-            if alt == "n/a":
-                skip_gps += 1
-                if skip_gps > 10:
-                    break
-                continue
-            else:
-                alt = float(alt) * 3.28084
-            lat = float(result.get("lat", "n/a"))
-            lon = float(result.get("lon", "n/a"))
-            # print("Latitude: %s" % lat)
-            # print("Longitude: %s" % lon)
-            break
+    alt = agps_thread.data_stream.alt 
+    # print(alt)
+    if alt == "n/a":
+        alt = 0
+        lat = 0
+        lon = 0
+    else:
+        alt = alt * 3.28084
+        lat = agps_thread.data_stream.lat
+        lon = agps_thread.data_stream.lon
+    # start = time.time()
+    # for new_data in gpsd_socket:
+    #     end = time.time()
+    #     timer = end - start
+    #     print(timer)
+    #     if timer > 0.5:
+    #         alt = 0
+    #         lat = 0
+    #         lon = 0
+    #         break
+    #     if new_data:
+    #         data_stream.unpack(new_data)
+    #         alt = data_stream.TPV['alt']
+    #         lat = data_stream.TPV['lat']
+    #         lon = data_stream.TPV['lon']
+    #         if isinstance(alt, float):
+    #             alt = alt * 3.28084
+    #             break
 
     ax1.set_title(f"Latitude: {round(lat,5)}, Longitude: {round(lon, 5)}, Altitude: {round(alt, 2)} ft")
     
