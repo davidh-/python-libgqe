@@ -5,7 +5,7 @@ import numpy as np
 import datetime
 import os
 import time
-from gps3 import agps3
+from gpsdclient import GPSDClient
 
 os.environ["DISPLAY"] = ":0.0"
 os.environ["XAUTHORITY"] = "/home/pi/.Xauthority"
@@ -19,10 +19,7 @@ data_file = pro_dir + "/data/" + timestamp + ".csv"
 with open(data_file, "w") as f:
     f.write("date-time,cpm,emf,rf,ef,altitude,latitude,longitude\n")
 
-from gps3.agps3threaded import AGPS3mechanism
-agps_thread = AGPS3mechanism()  # Instantiate AGPS3 Mechanisms
-agps_thread.stream_data()  # From localhost (), or other hosts, by example, (host='gps.ddns.net')
-agps_thread.run_thread()  # Throttle time to sleep after an empty lookup, default '()' 0.2 two tenths of a second
+
 
 x = []
 y_cpm = []
@@ -93,15 +90,26 @@ except subprocess.CalledProcessError:
     exit()
         
 def update(frame):
-    alt = agps_thread.data_stream.alt 
-    if alt == "n/a":
-        alt = 0
-        lat = 0
-        lon = 0
-    else:
-        alt = alt * 3.28084
-        lat = agps_thread.data_stream.lat
-        lon = agps_thread.data_stream.lon
+    alt = 0
+    lat = 0
+    lon = 0
+    skip_gps = 0
+    with GPSDClient() as client:
+        for result in client.dict_stream(convert_datetime=True, filter=["TPV", "SKY"]):
+            alt = result.get("alt", "n/a")
+            print("Alt: %s" % alt)
+            if alt == "n/a":
+                skip_gps += 1
+                if skip_gps > 10:
+                    break
+                continue
+            else:
+                alt = float(alt) * 3.28084
+            lat = float(result.get("lat", "n/a"))
+            lon = float(result.get("lon", "n/a"))
+            # print("Latitude: %s" % lat)
+            # print("Longitude: %s" % lon)
+            break
 
     ax1.set_title(f"Latitude: {round(lat,5)}, Longitude: {round(lon, 5)}, Altitude: {round(alt, 2)} ft")
     
@@ -164,6 +172,13 @@ def update(frame):
 
 
 ani = animation.FuncAnimation(fig, update, interval=1, cache_frame_data=False)
+
+
+def on_close(event):
+    print('Plot closed')
+
+
+fig.canvas.mpl_connect('close_event', on_close)
 
 plt.show()
 
