@@ -8,7 +8,7 @@ import time
 
 import matplotlib.widgets as widgets
 
-TIME_WINDOW = 10  # default time window in minutes
+TIME_WINDOW = 1  # default time window in minutes
 
 
 os.environ["DISPLAY"] = ":0.0"
@@ -28,25 +28,7 @@ agps_thread = AGPS3mechanism()  # Instantiate AGPS3 Mechanisms
 agps_thread.stream_data()  # From localhost (), or other hosts, by example, (host='gps.ddns.net')
 agps_thread.run_thread()  # Throttle time to sleep after an empty lookup, default '()' 0.2 two tenths of a second
 
-# try:
-#     subprocess.check_output(['gpsctl', '-c', '0.1'])
-# except subprocess.CalledProcessError as e:
-#     print(f"Error setting gps refresh rate: {e}")
-
-# from gps3 import gps3
-# gpsd_socket = gps3.GPSDSocket()
-# data_stream = gps3.DataStream()
-# gpsd_socket.connect()
-# gpsd_socket.watch()
-
-x = []
-y_cpm = []
-y_emf = []
-y_rf = []
-y_ef = []
-y_lat = []
-y_lon = []
-y_alt = []
+x = []; y_cpm = []; y_emf = []; y_rf = []; y_ef = []; y_lat = []; y_lon = []; y_alt = []
 
 fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=4, sharex=True)
 
@@ -57,13 +39,13 @@ line_cpm, = ax1.plot(x, y_cpm)
 ax1.set_ylabel("cpm")
 
 line_emf, = ax2.plot(x, y_emf)
-ax2.set_ylabel("emf\n(mG)")
+ax2.set_ylabel("emf")
 
 line_rf, = ax3.plot(x, y_rf)
-ax3.set_ylabel("rf\n(mW/m2)")
+ax3.set_ylabel("rf")
 
 line_ef, = ax4.plot(x, y_ef)
-ax4.set_ylabel("ef\n(V/m)")
+ax4.set_ylabel("ef")
 
 gqe_cli_dir = pro_dir + "gqe-cli"
 
@@ -118,24 +100,7 @@ def update(frame):
         alt = alt * 3.28084
         lat = agps_thread.data_stream.lat
         lon = agps_thread.data_stream.lon
-    # start = time.time()
-    # for new_data in gpsd_socket:
-    #     end = time.time()
-    #     timer = end - start
-    #     print(timer)
-    #     if timer > 0.5:
-    #         alt = 0
-    #         lat = 0
-    #         lon = 0
-    #         break
-    #     if new_data:
-    #         data_stream.unpack(new_data)
-    #         alt = data_stream.TPV['alt']
-    #         lat = data_stream.TPV['lat']
-    #         lon = data_stream.TPV['lon']
-    #         if isinstance(alt, float):
-    #             alt = alt * 3.28084
-    #             break
+
 
     ax1.set_title(f"Latitude: {round(lat,5)}, Longitude: {round(lon, 5)}, Altitude: {round(alt, 2)} ft")
     
@@ -163,21 +128,18 @@ def update(frame):
             text.remove()
 
     # Add text box to the right of each plot
-    ax1.text(1.05, 0.5, f"{cpm}", transform=ax1.transAxes, va='center')
-    ax2.text(1.05, 0.5, f"{emf}", transform=ax2.transAxes, va='center')
-    ax3.text(1.05, 0.5, f"{rf}", transform=ax3.transAxes, va='center')
-    ax4.text(1.05, 0.5, f"{ef}", transform=ax4.transAxes, va='center')
+    ax1.text(1.01, 0.5, f"{cpm}", transform=ax1.transAxes, va='center')
+    ax2.text(1.01, 0.5, f"{emf}\nmG", transform=ax2.transAxes, va='center')
+    ax3.text(1.01, 0.5, f"{rf}\nmW/m2", transform=ax3.transAxes, va='center')
+    ax4.text(1.01, 0.5, f"{ef}\nV/m", transform=ax4.transAxes, va='center')
 
-
-    # for ax, y, label in [(ax1, cpm, "cpm"), (ax2, emf, "emf"), (ax3, rf, "rf"), (ax4, ef, "ef")]:
-    #     ax.text(len(x), y, f'{label}: {y}', fontsize=10, ha='right')
 
     now = datetime.datetime.now()
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
     with open(data_file, "a") as f:
         f.write(f"{timestamp},{cpm},{emf},{rf},{ef}, {alt},{lat},{lon}\n")
 
-    x.append(len(x))
+    x.append(now)
     y_cpm.append(cpm)
     y_emf.append(emf)
     y_rf.append(rf)
@@ -195,20 +157,14 @@ def update(frame):
     line_ef.set_xdata(x)
     line_ef.set_ydata(y_ef)
 
-    # Manually set the x-limits to match the length of the x array
-    ax1.set_xlim([0, len(x)])
-    ax2.set_xlim([0, len(x)])
-    ax3.set_xlim([0, len(x)])
-    ax4.set_xlim([0, len(x)])
+    # Update x-limits to only show the last TIME_WINDOW minutes
+    min_time = now - datetime.timedelta(minutes=TIME_WINDOW)
+    for ax in [ax1, ax2, ax3, ax4]:
+        ax.set_xlim([min_time, now])
+        ax.relim()
+        ax.autoscale_view()
 
-    ax1.relim()
-    ax1.autoscale_view()
-    ax2.relim()
-    ax2.autoscale_view()
-    ax3.relim()
-    ax3.autoscale_view()    
-    ax4.relim()
-    ax4.autoscale_view()
+
     return line_cpm, line_emf, line_rf, line_ef
 
 
@@ -218,10 +174,27 @@ ani = animation.FuncAnimation(fig, update, interval=1, cache_frame_data=False)
 def on_close(event):
     print('Plot closed')
 
+# Radio buttons to control the time window
+time_options = ['1', '5', '10', '15', '30', '60']
+radio_ax = plt.axes([0.1, 0.90, 0.15, 0.075], frame_on=False)  # adjust these values to position the radio buttons
+radio = widgets.RadioButtons(radio_ax, labels=time_options, active=0)
+
+# adjust radius here. The default is 0.05
+for circle in radio.circles:
+    circle.set_radius(0.1)
+
+for label in radio.labels:
+    label.set_fontsize(14)  # Change the fontsize to the desired value
+
+def on_select(label):
+    global TIME_WINDOW
+    TIME_WINDOW = int(label)
+radio.on_clicked(on_select)
+
+
 
 fig.canvas.mpl_connect('close_event', on_close)
 
 plt.show()
 
 
-# need to update code so only last 10 minutes shows on graph
