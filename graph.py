@@ -5,7 +5,11 @@ import numpy as np
 import datetime
 import os
 import time
-from gpsdclient import GPSDClient
+
+import matplotlib.widgets as widgets
+
+TIME_WINDOW = 10  # default time window in minutes
+
 
 os.environ["DISPLAY"] = ":0.0"
 os.environ["XAUTHORITY"] = "/home/pi/.Xauthority"
@@ -24,7 +28,10 @@ agps_thread = AGPS3mechanism()  # Instantiate AGPS3 Mechanisms
 agps_thread.stream_data()  # From localhost (), or other hosts, by example, (host='gps.ddns.net')
 agps_thread.run_thread()  # Throttle time to sleep after an empty lookup, default '()' 0.2 two tenths of a second
 
-
+# try:
+#     subprocess.check_output(['gpsctl', '-c', '0.1'])
+# except subprocess.CalledProcessError as e:
+#     print(f"Error setting gps refresh rate: {e}")
 
 # from gps3 import gps3
 # gpsd_socket = gps3.GPSDSocket()
@@ -149,7 +156,22 @@ def update(frame):
         emf = 0.0
         rf = 0.0
         ef = 0.0
-    
+
+    # Clear any previously drawn text by removing it from the axes
+    for ax in [ax1, ax2, ax3, ax4]:
+        for text in ax.texts:
+            text.remove()
+
+    # Add text box to the right of each plot
+    ax1.text(1.05, 0.5, f"{cpm}", transform=ax1.transAxes, va='center')
+    ax2.text(1.05, 0.5, f"{emf}", transform=ax2.transAxes, va='center')
+    ax3.text(1.05, 0.5, f"{rf}", transform=ax3.transAxes, va='center')
+    ax4.text(1.05, 0.5, f"{ef}", transform=ax4.transAxes, va='center')
+
+
+    # for ax, y, label in [(ax1, cpm, "cpm"), (ax2, emf, "emf"), (ax3, rf, "rf"), (ax4, ef, "ef")]:
+    #     ax.text(len(x), y, f'{label}: {y}', fontsize=10, ha='right')
+
     now = datetime.datetime.now()
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
     with open(data_file, "a") as f:

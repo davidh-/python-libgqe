@@ -1,6 +1,6 @@
 snapd
 gqrx-sdr
-gpsd
+gpsd>=3.25
 gpsd-clients
 hackrf
 cmake # for hackrf git source 
