@@ -21,14 +21,14 @@ timestamp = now.strftime("%Y-%m-%d-%H:%M:%S")
 
 data_file = pro_dir + "/data/" + timestamp + ".csv"
 with open(data_file, "w") as f:
-    f.write("date-time,cpm,emf,rf,ef,altitude,latitude,longitude\n")
+    f.write("date-time,cpm,emf,rf,ef,altitude,latitude,longitude, velocity\n")
 
 from gps3.agps3threaded import AGPS3mechanism
 agps_thread = AGPS3mechanism()  # Instantiate AGPS3 Mechanisms
 agps_thread.stream_data()  # From localhost (), or other hosts, by example, (host='gps.ddns.net')
 agps_thread.run_thread()  # Throttle time to sleep after an empty lookup, default '()' 0.2 two tenths of a second
 
-x = []; y_cpm = []; y_emf = []; y_rf = []; y_ef = []; y_lat = []; y_lon = []; y_alt = []
+x = []; y_cpm = []; y_emf = []; y_rf = []; y_ef = []; y_lat = []; y_lon = []; y_alt = []; y_vel = []
 
 fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=4, sharex=True)
 
@@ -96,13 +96,15 @@ def update(frame):
         alt = 0
         lat = 0
         lon = 0
+        vel = 0
     else:
-        alt = alt * 3.28084
+        alt = alt * 3.28084 # m to ft
         lat = agps_thread.data_stream.lat
         lon = agps_thread.data_stream.lon
+        vel = agps_thread.data_stream.speed * 1.609 # kmh to mph
 
 
-    ax1.set_title(f"Latitude: {round(lat,5)}, Longitude: {round(lon, 5)}, Altitude: {round(alt, 2)} ft")
+    ax1.set_title(f"Lat: {round(lat,5)}, Lon: {round(lon, 5)}, Alt: {round(alt, 2)} ft, Vel: {round(vel, 1)} mph")
     
     try:
         output_cpm = subprocess.check_output([gqe_cli_dir, port_500, arg_unit, name_500, arg_revision, ver_500, unit_500_get_cpm])
@@ -137,7 +139,7 @@ def update(frame):
     now = datetime.datetime.now()
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
     with open(data_file, "a") as f:
-        f.write(f"{timestamp},{cpm},{emf},{rf},{ef}, {alt},{lat},{lon}\n")
+        f.write(f"{timestamp},{cpm},{emf},{rf},{ef},{alt},{lat},{lon},{vel}\n")
 
     x.append(now)
     y_cpm.append(cpm)
