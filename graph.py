@@ -30,7 +30,14 @@ agps_thread.run_thread()  # Throttle time to sleep after an empty lookup, defaul
 
 x = []; y_cpm = []; y_emf = []; y_rf = []; y_ef = []; y_lat = []; y_lon = []; y_alt = []; y_vel = []
 
-fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=4, sharex=True)
+fig, (ax1, ax2, ax3, ax4, ax5, ax6) = plt.subplots(nrows=6, sharex=True)
+
+line_vel, = ax5.plot(x, y_vel)
+ax5.set_ylabel("vel")
+
+line_alt, = ax6.plot(x, y_alt)
+ax6.set_ylabel("alt")
+
 
 # Set the figure location to (x=0,y=0) on the screen
 fig.canvas.manager.window.move(0, 0)
@@ -90,6 +97,7 @@ except subprocess.CalledProcessError:
     exit()
         
 def update(frame):
+    start = time.time()
     alt = agps_thread.data_stream.alt 
     # print(alt)
     if alt == "n/a":
@@ -101,17 +109,22 @@ def update(frame):
         alt = alt * 3.28084 # m to ft
         lat = agps_thread.data_stream.lat
         lon = agps_thread.data_stream.lon
-        vel = agps_thread.data_stream.speed * 1.609 # kmh to mph
+        vel = agps_thread.data_stream.speed * 2.237  # m/s to mph
 
 
-    ax1.set_title(f"Lat: {round(lat,5)}, Lon: {round(lon, 5)}, Alt: {round(alt, 2)} ft, Vel: {round(vel, 1)} mph")
+    ax1.set_title(f"Lat: {round(lat,5)}, Lon: {round(lon, 5)}")
     
+    time_start_cpm = time.time()
     try:
         output_cpm = subprocess.check_output([gqe_cli_dir, port_500, arg_unit, name_500, arg_revision, ver_500, unit_500_get_cpm])
         cpm = float(output_cpm.decode().strip())
     except subprocess.CalledProcessError as e:
         print(f"Error getting GMC500Plus cpm: {e}")
         cpm = 0
+    time_end_cpm = time.time()
+    print("cpm time:", time_end_cpm-time_start_cpm)
+
+    time_start_emf = time.time()
     try:
         output_emf_rf_ef = subprocess.check_output([gqe_cli_dir, port_390, arg_unit, name_390, arg_revision, ver_390, unit_390_get_emf, "--get-rf", "TOTALDENSITY", "--get-ef"])
         output_list = output_emf_rf_ef.decode().split('\n')
@@ -123,9 +136,12 @@ def update(frame):
         emf = 0.0
         rf = 0.0
         ef = 0.0
+    time_end_emf = time.time()
+    print("emf time:", time_end_emf-time_start_emf)
+
 
     # Clear any previously drawn text by removing it from the axes
-    for ax in [ax1, ax2, ax3, ax4]:
+    for ax in [ax1, ax2, ax3, ax4, ax5, ax6]:
         for text in ax.texts:
             text.remove()
 
@@ -134,6 +150,8 @@ def update(frame):
     ax2.text(1.01, 0.5, f"{emf}\nmG", transform=ax2.transAxes, va='center')
     ax3.text(1.01, 0.5, f"{rf}\nmW/m2", transform=ax3.transAxes, va='center')
     ax4.text(1.01, 0.5, f"{ef}\nV/m", transform=ax4.transAxes, va='center')
+    ax5.text(1.01, 0.5, f"{round(vel, 1)}\nmph", transform=ax5.transAxes, va='center')
+    ax6.text(1.01, 0.5, f"{round(alt, 2)}\nft", transform=ax6.transAxes, va='center')
 
 
     now = datetime.datetime.now()
@@ -147,6 +165,10 @@ def update(frame):
     y_rf.append(rf)
     y_ef.append(ef)
 
+    y_vel.append(vel)
+    y_alt.append(alt)
+
+
     line_cpm.set_xdata(x)
     line_cpm.set_ydata(y_cpm)
     
@@ -159,6 +181,13 @@ def update(frame):
     line_ef.set_xdata(x)
     line_ef.set_ydata(y_ef)
 
+    line_vel.set_xdata(x)
+    line_vel.set_ydata(y_vel)
+    
+    line_alt.set_xdata(x)
+    line_alt.set_ydata(y_alt)
+
+
     # Update x-limits to only show the last TIME_WINDOW minutes
     min_time = now - datetime.timedelta(minutes=TIME_WINDOW)
     for ax in [ax1, ax2, ax3, ax4]:
@@ -166,11 +195,12 @@ def update(frame):
         ax.relim()
         ax.autoscale_view()
 
+    end = time.time()
+    print("update time: ", end-start)
+    return line_cpm, line_emf, line_rf, line_ef, line_vel, line_alt
 
-    return line_cpm, line_emf, line_rf, line_ef
 
-
-ani = animation.FuncAnimation(fig, update, interval=1, cache_frame_data=False)
+ani = animation.FuncAnimation(fig, update, interval=0, cache_frame_data=False)
 
 
 def on_close(event):
