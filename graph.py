@@ -190,7 +190,7 @@ def update(frame):
 
     # Update x-limits to only show the last TIME_WINDOW minutes
     min_time = now - datetime.timedelta(minutes=TIME_WINDOW)
-    for ax in [ax1, ax2, ax3, ax4]:
+    for ax in [ax1, ax2, ax3, ax4, ax5, ax6]:
         ax.set_xlim([min_time, now])
         ax.relim()
         ax.autoscale_view()
