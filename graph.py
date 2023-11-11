@@ -10,8 +10,6 @@ import serial
 import matplotlib.widgets as widgets
 
 
-
-
 TIME_WINDOW = 1  # default time window in minutes
 
 
@@ -27,10 +25,12 @@ data_file = pro_dir + "/data/" + timestamp + ".csv"
 with open(data_file, "w") as f:
     f.write("date-time,cpm_h,cpm_l,emf,rf,ef,altitude,latitude,longitude, velocity\n")
 
-from gps3.agps3threaded import AGPS3mechanism
-agps_thread = AGPS3mechanism()  # Instantiate AGPS3 Mechanisms
-agps_thread.stream_data()  # From localhost (), or other hosts, by example, (host='gps.ddns.net')
-agps_thread.run_thread()  # Throttle time to sleep after an empty lookup, default '()' 0.2 two tenths of a second
+import gpsd
+
+# Connect to the local gpsd
+gpsd.connect()
+
+
 
 x = []; y_cpm_h = []; y_cpm_l = []; y_emf = []; y_rf = []; y_ef = []; y_lat = []; y_lon = []; y_alt = []; y_vel = []
 
@@ -72,7 +72,7 @@ unit_500_get_cpm_h = "--get-cpm-h"
 unit_500_get_cpm_l = "--get-cpm-l"
 
 name_390 = "GQEMF390"
-port_390 = "/dev/ttyUSB2"
+port_390 = "/dev/ttyUSB0"
 ver_390 = "'Re 3.70'"
 unit_390_get_emf = "--get-emf"
 
@@ -116,47 +116,54 @@ while True:
         port_500, port_390 = port_390, port_500
         stop_try_500 = True
 
+stop_try_390 = False
+while True:
+    # Initialize the serial connection
+    ser = serial.Serial(port_390, baud_rate, timeout=1)
 
-# Initialize the serial connection
-ser = serial.Serial(port_390, baud_rate, timeout=1)
+    # Command to power on the 390 
+    power_on_command = '<POWERON>>'.encode()  # Command must be encoded to bytes
+    ser.write(power_on_command)
 
-# Command to power on the 390 
-power_on_command = '<POWERON>>'.encode()  # Command must be encoded to bytes
-ser.write(power_on_command)
+    time.sleep(2)
 
-time.sleep(2)
+    get_ver_command = '<GETVER>>'.encode()  # Command must be encoded to bytes
 
-get_ver_command = '<GETVER>>'.encode()  # Command must be encoded to bytes
+    # Write the command to the serial port
+    ser.write(get_ver_command)
 
-# Write the command to the serial port
-ser.write(get_ver_command)
+    # Read the response from the 390 
+    response = ser.read(20).decode('utf-8')  # 
+    print(response)
+    ser.close()
 
-# Read the response from the 390 
-response = ser.read(20).decode('utf-8')  # 
-print(response)
-ser.close()
-
-if (response == "GQ-EMF390v2Re 3.70\r\n"):
-    print(f"Successfull port and power on for {name_390}. Port is {port_390}.")
-else:
-    print(f"Error: Unable to execute command for {name_390}. Something wrong. Check physical connections.")
-    exit()    
+    if (response == "GQ-EMF390v2Re 3.70\r\n"):
+        print(f"Successfull port and power on for {name_390}. Port is {port_390}.")
+        break
+    elif stop_try_390:
+        print(f"Error: Unable to execute command for {name_390}. Something wrong. Check physical connections.")
+        exit() 
+    else:
+        print(f"Error: Unable to execute command for {name_390}. Changing default ports. Retrying...")
+        port_390 = "/dev/ttyUSB0"
+        stop_try_390 = True
 
 
 def update(frame):
     start = time.time()
-    alt = agps_thread.data_stream.alt 
-    # print(alt)
-    if alt == "n/a":
-        alt = 0
-        lat = 0
-        lon = 0
-        vel = 0
-    else:
-        alt = alt * 3.28084 # m to ft
-        lat = agps_thread.data_stream.lat
-        lon = agps_thread.data_stream.lon
-        vel = agps_thread.data_stream.speed * 2.237  # m/s to mph
+
+    # Get gps position
+    packet = gpsd.get_current()
+
+    pos = packet.position()
+    lat, lon = pos[0], pos[1]
+
+    alt = packet.altitude() 
+    alt = alt  * 3.28084 # m to ft
+
+    vel = packet.speed()
+    vel = vel * 2.237  # m/s to mph
+
 
 
     ax1.set_title(f"Lat: {round(lat,5)}, Lon: {round(lon, 5)}")
@@ -177,8 +184,6 @@ def update(frame):
         # Convert the response from bytes to an integer assuming little-endian format
         cpm_h_value = int.from_bytes(response, byteorder='big')
 
-        print(f"CPM-H value: {cpm_h_value}")
-
         cpm_h = float(cpm_h_value)
 
 
@@ -194,8 +199,6 @@ def update(frame):
 
         # Convert the response from bytes to an integer assuming little-endian format
         cpm_l_value = int.from_bytes(response, byteorder='big')
-
-        print(f"CPM-L value: {cpm_l_value}")
 
         cpm_l = float(cpm_l_value)
 
