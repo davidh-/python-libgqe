@@ -66,13 +66,13 @@ gqe_cli_dir = pro_dir + "gqe-cli"
 baud_rate = 115200  # Baud rate as specified by the device documentation
 
 name_500 = "GMC500Plus"
-port_500 = "/dev/ttyUSB1"
+port_500 = "/dev/gmc500"
 ver_500 = "'Re 2.42'"
 unit_500_get_cpm_h = "--get-cpm-h"
 unit_500_get_cpm_l = "--get-cpm-l"
 
 name_390 = "GQEMF390"
-port_390 = "/dev/ttyUSB0"
+port_390 = "/dev/emf390"
 ver_390 = "'Re 3.70'"
 unit_390_get_emf = "--get-emf"
 
@@ -151,18 +151,23 @@ while True:
 
 def update(frame):
     start = time.time()
+    try:
+        # Get gps position
+        packet = gpsd.get_current()
+        pos = packet.position()
+        lat, lon = pos[0], pos[1]
 
-    # Get gps position
-    packet = gpsd.get_current()
+        alt = packet.altitude() 
+        alt = alt  * 3.28084 # m to ft
 
-    pos = packet.position()
-    lat, lon = pos[0], pos[1]
-
-    alt = packet.altitude() 
-    alt = alt  * 3.28084 # m to ft
-
-    vel = packet.speed()
-    vel = vel * 2.237  # m/s to mph
+        vel = packet.hspeed
+        vel = vel * 2.237  # m/s to mph
+    except:
+        # reset gps here TODO subprocess
+        lat = 0
+        lon = 0
+        alt = 0
+        vel = 0
 
 
 
