@@ -135,18 +135,26 @@ while True:
     # Read the response from the 390 
     response = ser.read(20).decode('utf-8')  # 
     print(response)
-    ser.close()
 
     if (response == "GQ-EMF390v2Re 3.70\r\n"):
         print(f"Successfull port and power on for {name_390}. Port is {port_390}.")
+        #get_config = '<GETCFG>>'.encode() 
+        #ser.write(get_config)
+        #response = ser.read(256).decode('utf-8')  # 
+        #print(response)
+
+
+        ser.close()
         break
     elif stop_try_390:
         print(f"Error: Unable to execute command for {name_390}. Something wrong. Check physical connections.")
+        ser.close()
         exit() 
     else:
         print(f"Error: Unable to execute command for {name_390}. Changing default ports. Retrying...")
         port_390 = "/dev/ttyUSB0"
         stop_try_390 = True
+        ser.close()
 
 
 def update(frame):
