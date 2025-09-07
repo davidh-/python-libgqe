@@ -280,54 +280,39 @@ def update(frame):
         except Exception:
             return ''
 
+    # read_until was attempted for batched reads but caused mis-splits; keep simple reader
+
 
     time_start_emf = time.time()
     try:
         global ser_390
 
-        get_emf_command = '<GETEMF>>'.encode()  # Command must be encoded to bytes
-
-        # Clear any stale bytes, then write the command
+        get_emf_command = '<GETEMF>>'.encode()
         try:
             ser_390.reset_input_buffer()
         except Exception:
             pass
         ser_390.write(get_emf_command)
-
-        # Read the response from the 390
         response = read_response(ser_390)
+        emf = float(response.split(" ")[2]) if response else 0.0
 
-        emf = float(response.split(" ")[2])
-
-
-
-        get_ef_command = '<GETEF>>'.encode()  # Command must be encoded to bytes
-
+        get_ef_command = '<GETEF>>'.encode()
         try:
             ser_390.reset_input_buffer()
         except Exception:
             pass
         ser_390.write(get_ef_command)
-
-        # Read the response from the 390
         response = read_response(ser_390)
+        ef = float(response.split(" ")[2]) if response else 0.0
 
-        ef = float(response.split(" ")[2])
-
-
-
-        get_rf_command = '<GETRFTOTALDENSITY>>'.encode()  # Command must be encoded to bytes
-
+        get_rf_command = '<GETRFTOTALDENSITY>>'.encode()
         try:
             ser_390.reset_input_buffer()
         except Exception:
             pass
         ser_390.write(get_rf_command)
-
-        # Read the response from the 390
         response = read_response(ser_390)
-
-        rf = float(response.split(" ")[0])
+        rf = float(response.split(" ")[0]) if response else 0.0
         
 
 
