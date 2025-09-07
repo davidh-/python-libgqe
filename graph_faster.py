@@ -262,34 +262,61 @@ class MainWindow(QtWidgets.QWidget):
             p.showGrid(x=True, y=True, alpha=0.3)
             p.setLabel('left', ylab)
 
-        # Curves
-        self.c_cpmh = self.plot_cpmh.plot(pen=pg.mkPen(width=2))
-        self.c_cpml = self.plot_cpml.plot(pen=pg.mkPen(width=2))
-        self.c_emf  = self.plot_emf.plot(pen=pg.mkPen(width=2))
-        self.c_rf   = self.plot_rf.plot(pen=pg.mkPen(width=2))
-        self.c_ef   = self.plot_ef.plot(pen=pg.mkPen(width=2))
-        self.c_vel  = self.plot_vel.plot(pen=pg.mkPen(width=2))
-        self.c_alt  = self.plot_alt.plot(pen=pg.mkPen(width=2))
+        # Hide bottom x-axis on all but the first (cpm_h) to avoid duplicate time axes
+        for p in [self.plot_cpml, self.plot_emf, self.plot_rf, self.plot_ef, self.plot_vel, self.plot_alt]:
+            try:
+                p.showAxis('bottom', False)
+            except Exception:
+                pass
 
-        # Live readouts
+        # Curves with distinct colors
+        colors = {
+            'cpmh': '#e74c3c',  # red
+            'cpml': '#27ae60',  # green
+            'emf':  '#3498db',  # blue
+            'rf':   '#e67e22',  # orange
+            'ef':   '#9b59b6',  # purple
+            'vel':  '#16a085',  # teal
+            'alt':  '#e91e63',  # magenta
+        }
+
+        self.c_cpmh = self.plot_cpmh.plot(pen=pg.mkPen(colors['cpmh'], width=2))
+        self.c_cpml = self.plot_cpml.plot(pen=pg.mkPen(colors['cpml'], width=2))
+        self.c_emf  = self.plot_emf.plot(pen=pg.mkPen(colors['emf'],  width=2))
+        self.c_rf   = self.plot_rf.plot(pen=pg.mkPen(colors['rf'],   width=2))
+        self.c_ef   = self.plot_ef.plot(pen=pg.mkPen(colors['ef'],   width=2))
+        self.c_vel  = self.plot_vel.plot(pen=pg.mkPen(colors['vel'],  width=2))
+        self.c_alt  = self.plot_alt.plot(pen=pg.mkPen(colors['alt'],  width=2))
+
+        # Live readouts: per-plot value labels on the right side
         self.lbl_latlon = QtWidgets.QLabel("Lat, Lon: -, -")
-        self.lbl_cpmh   = QtWidgets.QLabel("cpm_h: -")
-        self.lbl_cpml   = QtWidgets.QLabel("cpm_l: -")
-        self.lbl_emf    = QtWidgets.QLabel("emf: - mG")
-        self.lbl_rf     = QtWidgets.QLabel("rf: - mW/m²")
-        self.lbl_ef     = QtWidgets.QLabel("ef: - V/m")
-        self.lbl_vel    = QtWidgets.QLabel("vel: - mph")
-        self.lbl_alt    = QtWidgets.QLabel("alt: - ft")
+        self.val_cpmh   = QtWidgets.QLabel("-")
+        self.val_cpml   = QtWidgets.QLabel("-")
+        self.val_emf    = QtWidgets.QLabel("- mG")
+        self.val_rf     = QtWidgets.QLabel("- mW/m²")
+        self.val_ef     = QtWidgets.QLabel("- V/m")
+        self.val_vel    = QtWidgets.QLabel("- mph")
+        self.val_alt    = QtWidgets.QLabel("- ft")
+
+        for w in [self.val_cpmh, self.val_cpml, self.val_emf, self.val_rf, self.val_ef, self.val_vel, self.val_alt]:
+            w.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            w.setMinimumWidth(90)
+            w.setStyleSheet("font-weight: 600;")
+
+        # Match value label text colors to curves
+        try:
+            self.val_cpmh.setStyleSheet(f"color: {colors['cpmh']}; font-weight: 600;")
+            self.val_cpml.setStyleSheet(f"color: {colors['cpml']}; font-weight: 600;")
+            self.val_emf.setStyleSheet(f"color: {colors['emf']}; font-weight: 600;")
+            self.val_rf.setStyleSheet(f"color: {colors['rf']}; font-weight: 600;")
+            self.val_ef.setStyleSheet(f"color: {colors['ef']}; font-weight: 600;")
+            self.val_vel.setStyleSheet(f"color: {colors['vel']}; font-weight: 600;")
+            self.val_alt.setStyleSheet(f"color: {colors['alt']}; font-weight: 600;")
+        except Exception:
+            pass
 
         head = QtWidgets.QHBoxLayout()
         head.addWidget(self.lbl_latlon, 1)
-        head.addWidget(self.lbl_cpmh)
-        head.addWidget(self.lbl_cpml)
-        head.addWidget(self.lbl_emf)
-        head.addWidget(self.lbl_rf)
-        head.addWidget(self.lbl_ef)
-        head.addWidget(self.lbl_vel)
-        head.addWidget(self.lbl_alt)
 
         # Time window chooser
         self.window_choice = QtWidgets.QComboBox()
@@ -301,15 +328,27 @@ class MainWindow(QtWidgets.QWidget):
         head.addWidget(self.window_choice)
 
         # Layout
+        # Grid with plots in column 0 and value labels in column 1
+        grid = QtWidgets.QGridLayout()
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 0)
+
+        rows = [
+            (self.plot_cpmh, self.val_cpmh),
+            (self.plot_cpml, self.val_cpml),
+            (self.plot_emf,  self.val_emf),
+            (self.plot_rf,   self.val_rf),
+            (self.plot_ef,   self.val_ef),
+            (self.plot_vel,  self.val_vel),
+            (self.plot_alt,  self.val_alt),
+        ]
+        for r, (plot, val) in enumerate(rows):
+            grid.addWidget(plot, r, 0)
+            grid.addWidget(val,  r, 1)
+
         v = QtWidgets.QVBoxLayout(self)
         v.addLayout(head)
-        v.addWidget(self.plot_cpmh)
-        v.addWidget(self.plot_cpml)
-        v.addWidget(self.plot_emf)
-        v.addWidget(self.plot_rf)
-        v.addWidget(self.plot_ef)
-        v.addWidget(self.plot_vel)
-        v.addWidget(self.plot_alt)
+        v.addLayout(grid)
 
         # Timer
         self.timer = QtCore.QTimer(self)
@@ -317,8 +356,9 @@ class MainWindow(QtWidgets.QWidget):
         self.timer.start(UPDATE_MS)
 
     def change_time_window(self, label):
-        global t_buf, cpmh_buf, cpml_buf, emf_buf, rf_buf, ef_buf, vel_buf, alt_buf
+        global t_buf, cpmh_buf, cpml_buf, emf_buf, rf_buf, ef_buf, vel_buf, alt_buf, TIME_WINDOW_MIN
         minutes = int(label)
+        TIME_WINDOW_MIN = minutes
         # Recreate deques with new maxlen, copying recent data
         new_max = deque_len_for_window(minutes)
         def resize(old):
@@ -373,13 +413,13 @@ class MainWindow(QtWidgets.QWidget):
 
         # Update labels
         self.lbl_latlon.setText(f"Lat, Lon: {round(lat,5)}, {round(lon,5)}")
-        self.lbl_cpmh.setText(f"cpm_h: {cpm_h:.0f}")
-        self.lbl_cpml.setText(f"cpm_l: {cpm_l:.0f}")
-        self.lbl_emf.setText(f"emf: {emf:.3f} mG")
-        self.lbl_rf.setText(f"rf: {rf:.3f} mW/m²")
-        self.lbl_ef.setText(f"ef: {ef:.3f} V/m")
-        self.lbl_vel.setText(f"vel: {vel:.1f} mph")
-        self.lbl_alt.setText(f"alt: {alt:.1f} ft")
+        self.val_cpmh.setText(f"{cpm_h:.0f}")
+        self.val_cpml.setText(f"{cpm_l:.0f}")
+        self.val_emf.setText(f"{emf:.3f} mG")
+        self.val_rf.setText(f"{rf:.3f} mW/m²")
+        self.val_ef.setText(f"{ef:.3f} V/m")
+        self.val_vel.setText(f"{vel:.1f} mph")
+        self.val_alt.setText(f"{alt:.1f} ft")
 
         # Update curves (use list() to give PyQtGraph a contiguous array-like)
         if len(t_buf) > 1:
@@ -391,10 +431,9 @@ class MainWindow(QtWidgets.QWidget):
             self.c_vel.setData(list(t_buf), list(vel_buf))
             self.c_alt.setData(list(t_buf), list(alt_buf))
 
-            # Keep x-range pinned to recent time window
-            # We infer the window from buffer span to avoid extra state.
-            tmin = t_buf[0]
-            tmax = t_buf[-1]
+            # Keep x-range pinned to a moving window of TIME_WINDOW_MIN
+            tmax = time.time()
+            tmin = tmax - TIME_WINDOW_MIN * 60
             self.plot_cpmh.setXRange(tmin, tmax, padding=0)
             # y autoscale lightweight
             for plot, buf in [
