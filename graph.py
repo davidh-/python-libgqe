@@ -172,6 +172,9 @@ while True:
         ser.close()
 
 
+# Persistent EMF serial connection (reuse across frames)
+ser_390 = serial.Serial(port_390, baud_rate, timeout=0.2)
+
 def update(frame):
     start = time.time()
     try:
@@ -280,19 +283,19 @@ def update(frame):
 
     time_start_emf = time.time()
     try:
-
-        # Initialize the serial connection
-        ser = serial.Serial(port_390, baud_rate, timeout=0.2)
-
+        global ser_390
 
         get_emf_command = '<GETEMF>>'.encode()  # Command must be encoded to bytes
 
-        # Write the command to the serial port
-        ser.write(get_emf_command)
+        # Clear any stale bytes, then write the command
+        try:
+            ser_390.reset_input_buffer()
+        except Exception:
+            pass
+        ser_390.write(get_emf_command)
 
         # Read the response from the 390
-        # response = ser.read(12).decode('utf-8')  # 
-        response = read_response(ser)
+        response = read_response(ser_390)
 
         emf = float(response.split(" ")[2])
 
@@ -300,12 +303,14 @@ def update(frame):
 
         get_ef_command = '<GETEF>>'.encode()  # Command must be encoded to bytes
 
-        # Write the command to the serial port
-        ser.write(get_ef_command)
+        try:
+            ser_390.reset_input_buffer()
+        except Exception:
+            pass
+        ser_390.write(get_ef_command)
 
         # Read the response from the 390
-        # response = ser.read(13).decode('utf-8')  # 
-        response = read_response(ser)
+        response = read_response(ser_390)
 
         ef = float(response.split(" ")[2])
 
@@ -313,18 +318,18 @@ def update(frame):
 
         get_rf_command = '<GETRFTOTALDENSITY>>'.encode()  # Command must be encoded to bytes
 
-        # Write the command to the serial port
-        ser.write(get_rf_command)
+        try:
+            ser_390.reset_input_buffer()
+        except Exception:
+            pass
+        ser_390.write(get_rf_command)
 
         # Read the response from the 390
-        # response = ser.read(20).decode('utf-8')  # 
-        response = read_response(ser)
+        response = read_response(ser_390)
 
         rf = float(response.split(" ")[0])
         
 
-
-        ser.close()
 
     except subprocess.CalledProcessError as e:
         print(f"Error getting GQEMF390 data: {e}")
