@@ -231,10 +231,42 @@ def update(frame):
     print("cpm time:", time_end_cpm-time_start_cpm)
 
     def read_response(ser):
-        response = b''  # Initialize response as an empty byte string
-        while ser.in_waiting > 0 or not response:  # While there's something to read or we haven't started reading yet
-            response += ser.read(ser.in_waiting)  # Read whatever is available
-        return response.decode('utf-8').strip()  # Decode and strip whitespace
+        """Read available bytes with minimal latency and no busy-wait.
+        - Wait briefly (<=0.25s) for the first byte.
+        - Once bytes start arriving, coalesce for a short idle gap (~10–20ms).
+        Returns whatever bytes were received without requiring newline.
+        """
+        first_deadline = time.time() + 0.25
+        buf = b''
+        # Wait for first byte up to a small deadline
+        while time.time() < first_deadline and not buf:
+            try:
+                n = ser.in_waiting
+                if n:
+                    buf += ser.read(n)
+                    break
+            except Exception:
+                break
+            time.sleep(0.002)
+
+        # If we got something, allow a tiny coalescing window to grab trailing bytes
+        if buf:
+            gap_deadline = time.time() + 0.02
+            while time.time() < gap_deadline:
+                try:
+                    n = ser.in_waiting
+                    if n:
+                        buf += ser.read(n)
+                        gap_deadline = time.time() + 0.01  # extend while data flows
+                    else:
+                        time.sleep(0.001)
+                except Exception:
+                    break
+
+        try:
+            return buf.decode('utf-8', errors='ignore').strip()
+        except Exception:
+            return ''
 
 
     time_start_emf = time.time()
@@ -388,4 +420,3 @@ radio.on_clicked(on_select)
 fig.canvas.mpl_connect('close_event', on_close)
 
 plt.show()
-
