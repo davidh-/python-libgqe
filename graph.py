@@ -67,6 +67,15 @@ ax4.set_ylabel("rf")
 line_ef, = ax5.plot(x, y_ef)
 ax5.set_ylabel("ef")
 
+# Pre-create text labels once; update their content each frame
+text_cpm_h = ax1.text(1.01, 0.5, "", transform=ax1.transAxes, va='center')
+text_cpm_l = ax2.text(1.01, 0.5, "", transform=ax2.transAxes, va='center')
+text_emf   = ax3.text(1.01, 0.5, "", transform=ax3.transAxes, va='center')
+text_rf    = ax4.text(1.01, 0.5, "", transform=ax4.transAxes, va='center')
+text_ef    = ax5.text(1.01, 0.5, "", transform=ax5.transAxes, va='center')
+text_vel   = ax6.text(1.01, 0.5, "", transform=ax6.transAxes, va='center')
+text_alt   = ax7.text(1.01, 0.5, "", transform=ax7.transAxes, va='center')
+
 gqe_cli_dir = pro_dir + "gqe-cli"
 
 baud_rate = 115200  # Baud rate as specified by the device documentation
@@ -326,19 +335,14 @@ def update(frame):
     print("emf time:", time_end_emf-time_start_emf)
 
 
-    # Clear any previously drawn text by removing it from the axes
-    for ax in [ax1, ax2, ax3, ax4, ax5, ax6, ax7]:
-        for text in ax.texts:
-            text.remove()
-
-    # Add text box to the right of each plot
-    ax1.text(1.01, 0.5, f"{cpm_h}", transform=ax1.transAxes, va='center')
-    ax2.text(1.01, 0.5, f"{cpm_l}", transform=ax2.transAxes, va='center')
-    ax3.text(1.01, 0.5, f"{emf}\nmG", transform=ax3.transAxes, va='center')
-    ax4.text(1.01, 0.5, f"{rf}\nmW/m2", transform=ax4.transAxes, va='center')
-    ax5.text(1.01, 0.5, f"{ef}\nV/m", transform=ax5.transAxes, va='center')
-    ax6.text(1.01, 0.5, f"{round(vel, 1)}\nmph", transform=ax6.transAxes, va='center')
-    ax7.text(1.01, 0.5, f"{round(alt, 2)}\nft", transform=ax7.transAxes, va='center')
+    # Update text content of pre-created labels
+    text_cpm_h.set_text(f"{cpm_h}")
+    text_cpm_l.set_text(f"{cpm_l}")
+    text_emf.set_text(f"{emf}\nmG")
+    text_rf.set_text(f"{rf}\nmW/m2")
+    text_ef.set_text(f"{ef}\nV/m")
+    text_vel.set_text(f"{round(vel, 1)}\nmph")
+    text_alt.set_text(f"{round(alt, 2)}\nft")
 
 
     now = datetime.datetime.now()
