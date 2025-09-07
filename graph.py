@@ -9,6 +9,7 @@ import serial
 
 import matplotlib.widgets as widgets
 from threading import Thread, Lock
+from threading import Thread, Lock
 
 
 TIME_WINDOW = 1  # default time window in minutes
@@ -268,6 +269,148 @@ def _emf_reader_loop():
             time.sleep(0.05)
 
 
+# Start background EMF reader
+Thread(target=_emf_reader_loop, daemon=True).start()
+
+# Persistent CPM serial connection (reuse across frames)
+ser_500_bg = serial.Serial(port_500, baud_rate, timeout=0.5)
+
+# Background CPM reader state
+cpm_h_value = 0.0
+cpm_l_value = 0.0
+cpm_lock = Lock()
+
+
+def _cpm_reader_loop():
+    global cpm_h_value, cpm_l_value
+    while True:
+        try:
+            try:
+                ser_500_bg.reset_input_buffer()
+            except Exception:
+                pass
+            # High CPM
+            ser_500_bg.write(b'<GETCPMH>>')
+            resp = ser_500_bg.read(4)
+            if len(resp) == 4:
+                try:
+                    v = int.from_bytes(resp, byteorder='big')
+                    with cpm_lock:
+                        cpm_h_value = float(v)
+                except Exception:
+                    pass
+
+            # Low CPM
+            ser_500_bg.write(b'<GETCPML>>')
+            resp = ser_500_bg.read(4)
+            if len(resp) == 4:
+                try:
+                    v = int.from_bytes(resp, byteorder='big')
+                    with cpm_lock:
+                        cpm_l_value = float(v)
+                except Exception:
+                    pass
+
+            time.sleep(0.02)
+        except Exception:
+            time.sleep(0.05)
+
+
+# Start background CPM reader
+Thread(target=_cpm_reader_loop, daemon=True).start()
+
+# Background EMF/EF/RF reader state
+emf_value = 0.0
+ef_value = 0.0
+rf_value = 0.0
+emf_lock = Lock()
+
+
+def _read_response_bg(ser):
+    """Background-friendly serial read similar to read_response inside update()."""
+    deadline = time.time() + 0.25
+    buf = b''
+    while time.time() < deadline and not buf:
+        try:
+            n = ser.in_waiting
+            if n:
+                buf += ser.read(n)
+                break
+        except Exception:
+            break
+        time.sleep(0.002)
+
+    if buf:
+        gap_deadline = time.time() + 0.02
+        while time.time() < gap_deadline:
+            try:
+                n = ser.in_waiting
+                if n:
+                    buf += ser.read(n)
+                    gap_deadline = time.time() + 0.01
+                else:
+                    time.sleep(0.001)
+            except Exception:
+                break
+
+    try:
+        return buf.decode('utf-8', errors='ignore').strip()
+    except Exception:
+        return ''
+
+
+def _emf_reader_loop():
+    global emf_value, ef_value, rf_value
+    while True:
+        try:
+            try:
+                ser_390.reset_input_buffer()
+            except Exception:
+                pass
+            ser_390.write(b'<GETEMF>>')
+            r = _read_response_bg(ser_390)
+            if r:
+                try:
+                    v = float(r.split(' ')[2])
+                    with emf_lock:
+                        emf_value = v
+                except Exception:
+                    pass
+
+            try:
+                ser_390.reset_input_buffer()
+            except Exception:
+                pass
+            ser_390.write(b'<GETEF>>')
+            r = _read_response_bg(ser_390)
+            if r:
+                try:
+                    v = float(r.split(' ')[2])
+                    with emf_lock:
+                        ef_value = v
+                except Exception:
+                    pass
+
+            try:
+                ser_390.reset_input_buffer()
+            except Exception:
+                pass
+            ser_390.write(b'<GETRFTOTALDENSITY>>')
+            r = _read_response_bg(ser_390)
+            if r:
+                try:
+                    v = float(r.split(' ')[0])
+                    with emf_lock:
+                        rf_value = v
+                except Exception:
+                    pass
+
+            time.sleep(0.01)
+        except Exception:
+            # Keep the loop alive even if a read fails
+            time.sleep(0.05)
+
+
 # Start background reader
 Thread(target=_emf_reader_loop, daemon=True).start()
 
@@ -296,47 +439,12 @@ def update(frame):
     ax1.set_title(f"Lat: {round(lat,5)}, Lon: {round(lon, 5)}")
     
     time_start_cpm = time.time()
-    try:
-        ser = serial.Serial(port_500, baud_rate, timeout=1)
-
-        # Command to get the CPM of the low dose tube for GMC-500+
-        get_cpm_h_command = '<GETCPMH>>'.encode()  # Command must be encoded to bytes
-
-        # Write the command to the serial port
-        ser.write(get_cpm_h_command)
-
-        # Read the response from the Geiger counter
-        response = ser.read(4)  # Read 4 bytes as specified by the documentation
-
-        # Convert the response from bytes to an integer assuming little-endian format
-        cpm_h_value = int.from_bytes(response, byteorder='big')
-
+    # Use latest CPM values from background reader
+    with cpm_lock:
         cpm_h = float(cpm_h_value)
-
-
-
-        # Command to get the CPM of the low dose tube for GMC-500+
-        get_cpm_l_command = '<GETCPML>>'.encode()  # Command must be encoded to bytes
-
-        # Write the command to the serial port
-        ser.write(get_cpm_l_command)
-
-        # Read the response from the Geiger counter
-        response = ser.read(4)  # Read 4 bytes as specified by the documentation
-
-        # Convert the response from bytes to an integer assuming little-endian format
-        cpm_l_value = int.from_bytes(response, byteorder='big')
-
         cpm_l = float(cpm_l_value)
-
-        ser.close()
-
-    except subprocess.CalledProcessError as e:
-        print(f"Error getting GMC500Plus cpm: {e}")
-        cpm_h = 0
-        cpm_l = 0
     time_end_cpm = time.time()
-    print("cpm time:", time_end_cpm-time_start_cpm)
+    print("cpm time:", time_end_cpm - time_start_cpm)
 
     def read_response(ser):
         """Read available bytes with minimal latency and no busy-wait.
