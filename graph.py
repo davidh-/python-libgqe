@@ -16,12 +16,18 @@ TIME_WINDOW = 1  # default time window in minutes
 os.environ["DISPLAY"] = ":0.0"
 os.environ["XAUTHORITY"] = "/home/pi/.Xauthority"
 
-pro_dir = "/home/pi/python-libgqe/"
+"""
+Use current working directory for project root so data files are written under
+the folder where the script is started (e.g., repo's python-libgqe/).
+"""
+pro_dir = os.getcwd().rstrip("/") + "/"
 
 now = datetime.datetime.now()
 timestamp = now.strftime("%Y-%m-%d-%H:%M:%S")
 
-data_file = pro_dir + "/data/" + timestamp + ".csv"
+data_dir = os.path.join(pro_dir, "data")
+os.makedirs(data_dir, exist_ok=True)
+data_file = os.path.join(data_dir, timestamp + ".csv")
 with open(data_file, "w") as f:
     f.write("date-time,cpm_h,cpm_l,emf,rf,ef,altitude,latitude,longitude, velocity\n")
 
@@ -382,5 +388,4 @@ radio.on_clicked(on_select)
 fig.canvas.mpl_connect('close_event', on_close)
 
 plt.show()
-
 
