@@ -8,6 +8,7 @@ import time
 import serial
 
 import matplotlib.widgets as widgets
+from threading import Thread, Lock
 
 
 TIME_WINDOW = 1  # default time window in minutes
@@ -175,6 +176,101 @@ while True:
 # Persistent EMF serial connection (reuse across frames)
 ser_390 = serial.Serial(port_390, baud_rate, timeout=0.2)
 
+# Background EMF/EF/RF reader state
+emf_value = 0.0
+ef_value = 0.0
+rf_value = 0.0
+emf_lock = Lock()
+
+
+def _read_response_bg(ser):
+    """Background-friendly serial read similar to read_response inside update()."""
+    deadline = time.time() + 0.25
+    buf = b''
+    while time.time() < deadline and not buf:
+        try:
+            n = ser.in_waiting
+            if n:
+                buf += ser.read(n)
+                break
+        except Exception:
+            break
+        time.sleep(0.002)
+
+    if buf:
+        gap_deadline = time.time() + 0.02
+        while time.time() < gap_deadline:
+            try:
+                n = ser.in_waiting
+                if n:
+                    buf += ser.read(n)
+                    gap_deadline = time.time() + 0.01
+                else:
+                    time.sleep(0.001)
+            except Exception:
+                break
+
+    try:
+        return buf.decode('utf-8', errors='ignore').strip()
+    except Exception:
+        return ''
+
+
+def _emf_reader_loop():
+    global emf_value, ef_value, rf_value
+    while True:
+        try:
+            try:
+                ser_390.reset_input_buffer()
+            except Exception:
+                pass
+            ser_390.write(b'<GETEMF>>')
+            r = _read_response_bg(ser_390)
+            if r:
+                try:
+                    v = float(r.split(' ')[2])
+                    with emf_lock:
+                        emf_value = v
+                except Exception:
+                    pass
+
+            try:
+                ser_390.reset_input_buffer()
+            except Exception:
+                pass
+            ser_390.write(b'<GETEF>>')
+            r = _read_response_bg(ser_390)
+            if r:
+                try:
+                    v = float(r.split(' ')[2])
+                    with emf_lock:
+                        ef_value = v
+                except Exception:
+                    pass
+
+            try:
+                ser_390.reset_input_buffer()
+            except Exception:
+                pass
+            ser_390.write(b'<GETRFTOTALDENSITY>>')
+            r = _read_response_bg(ser_390)
+            if r:
+                try:
+                    v = float(r.split(' ')[0])
+                    with emf_lock:
+                        rf_value = v
+                except Exception:
+                    pass
+
+            time.sleep(0.01)
+        except Exception:
+            # Keep the loop alive even if a read fails
+            time.sleep(0.05)
+
+
+# Start background reader
+Thread(target=_emf_reader_loop, daemon=True).start()
+
 def update(frame):
     start = time.time()
     try:
@@ -283,46 +379,14 @@ def update(frame):
     # read_until was attempted for batched reads but caused mis-splits; keep simple reader
 
 
+    # Use latest EMF/EF/RF from background reader to avoid UI blocking
     time_start_emf = time.time()
-    try:
-        global ser_390
-
-        get_emf_command = '<GETEMF>>'.encode()
-        try:
-            ser_390.reset_input_buffer()
-        except Exception:
-            pass
-        ser_390.write(get_emf_command)
-        response = read_response(ser_390)
-        emf = float(response.split(" ")[2]) if response else 0.0
-
-        get_ef_command = '<GETEF>>'.encode()
-        try:
-            ser_390.reset_input_buffer()
-        except Exception:
-            pass
-        ser_390.write(get_ef_command)
-        response = read_response(ser_390)
-        ef = float(response.split(" ")[2]) if response else 0.0
-
-        get_rf_command = '<GETRFTOTALDENSITY>>'.encode()
-        try:
-            ser_390.reset_input_buffer()
-        except Exception:
-            pass
-        ser_390.write(get_rf_command)
-        response = read_response(ser_390)
-        rf = float(response.split(" ")[0]) if response else 0.0
-        
-
-
-    except subprocess.CalledProcessError as e:
-        print(f"Error getting GQEMF390 data: {e}")
-        emf = 0.0
-        rf = 0.0
-        ef = 0.0
+    with emf_lock:
+        emf = float(emf_value)
+        ef = float(ef_value)
+        rf = float(rf_value)
     time_end_emf = time.time()
-    print("emf time:", time_end_emf-time_start_emf)
+    print("emf time:", time_end_emf - time_start_emf)
 
 
     # Update text content of pre-created labels
