@@ -377,9 +377,14 @@ class MainWindow(QtWidgets.QWidget):
         # Pull GPS
         try:
             pkt = gpsd.get_current()
-            lat, lon = pkt.position()
-            alt = (pkt.altitude() or 0.0) * 3.28084
-            vel = (pkt.hspeed or 0.0) * 2.237
+            # Check if we have a valid GPS fix (mode 2 = 2D fix, mode 3 = 3D fix)
+            if pkt.mode >= 2:
+                lat, lon = pkt.position()
+                alt = (pkt.altitude() or 0.0) * 3.28084
+                vel = (pkt.hspeed or 0.0) * 2.237
+            else:
+                # No GPS fix yet
+                lat = lon = alt = vel = 0.0
         except Exception:
             lat = lon = alt = vel = 0.0
 
