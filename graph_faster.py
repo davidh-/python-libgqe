@@ -437,8 +437,14 @@ class MainWindow(QtWidgets.QWidget):
             self.c_alt.setData(list(t_buf), list(alt_buf))
 
             # Keep x-range pinned to a moving window of TIME_WINDOW_MIN
+            # Use the actual data range, bounded by the time window
             tmax = time.time()
             tmin = tmax - TIME_WINDOW_MIN * 60
+            # If we have older data in the buffer, use the oldest timestamp
+            if t_buf:
+                actual_tmin = min(t_buf)
+                # Show all available data, but don't exceed the time window
+                tmin = max(actual_tmin, tmin)
             self.plot_cpmh.setXRange(tmin, tmax, padding=0)
             # y autoscale lightweight
             for plot, buf in [
