@@ -9,6 +9,14 @@ import gpsd
 from PyQt5 import QtCore, QtWidgets
 import pyqtgraph as pg
 
+# Import API server
+try:
+    import api_server
+    API_SERVER_ENABLED = True
+except ImportError:
+    print("Warning: api_server module not found. API will not be available.")
+    API_SERVER_ENABLED = False
+
 # ----------------------------- Config ---------------------------------
 TIME_WINDOW_MIN = 1              # default time window (minutes)
 UPDATE_MS = 100                  # GUI refresh timer (milliseconds)
@@ -416,6 +424,13 @@ class MainWindow(QtWidgets.QWidget):
         except Exception:
             pass
 
+        # Update API server with new data
+        if API_SERVER_ENABLED:
+            try:
+                api_server.update_shared_data(now, cpm_h, cpm_l, emf, rf, ef, alt, lat, lon, vel)
+            except Exception as e:
+                pass  # Silently ignore API errors to not disrupt GUI
+
         # Update labels
         self.lbl_latlon.setText(f"Lat, Lon: {round(lat,5)}, {round(lon,5)}")
         self.val_cpmh.setText(f"{cpm_h:.0f}")
@@ -472,6 +487,12 @@ class MainWindow(QtWidgets.QWidget):
 
 # ------------------------------- Main ---------------------------------
 if __name__ == "__main__":
+    # Start API server in background thread
+    if API_SERVER_ENABLED:
+        api_thread = Thread(target=api_server.run_server, kwargs={'host': '0.0.0.0', 'port': 5000}, daemon=True)
+        api_thread.start()
+        print("API server started in background")
+
     app = QtWidgets.QApplication(sys.argv)
     # Better default look
     pg.setConfigOptions(antialias=True)
