@@ -513,7 +513,9 @@ Thread(target=cpm_reader_loop, daemon=True).start()
 logger.info("Background reader threads started")
 
 # ------------------------------- Data ---------------------------------
-# We’ll store timestamps as POSIX seconds (float) for DateAxisItem
+# We'll store timestamps as POSIX seconds (float) for DateAxisItem
+# Always store data for the maximum window (60 min) so switching windows shows historical data
+MAX_WINDOW_MIN = 60
 def deque_len_for_window(minutes, refresh_ms=UPDATE_MS):
     # generous headroom: ~10 updates/sec even if timer drifts
     approx_rate = max(1, int(1000 / refresh_ms))
@@ -532,7 +534,8 @@ def make_buffers(minutes):
         deque(maxlen=n),  # alt
     )
 
-t_buf, cpmh_buf, cpml_buf, emf_buf, rf_buf, ef_buf, vel_buf, alt_buf = make_buffers(TIME_WINDOW_MIN)
+# Create buffers sized for maximum window so all historical data is available
+t_buf, cpmh_buf, cpml_buf, emf_buf, rf_buf, ef_buf, vel_buf, alt_buf = make_buffers(MAX_WINDOW_MIN)
 
 # ------------------------------- GUI ----------------------------------
 class MainWindow(QtWidgets.QWidget):
@@ -676,22 +679,11 @@ class MainWindow(QtWidgets.QWidget):
         self.timer.start(UPDATE_MS)
 
     def change_time_window(self, label):
-        global t_buf, cpmh_buf, cpml_buf, emf_buf, rf_buf, ef_buf, vel_buf, alt_buf, TIME_WINDOW_MIN
+        global TIME_WINDOW_MIN
         minutes = int(label)
         TIME_WINDOW_MIN = minutes
-        # Recreate deques with new maxlen, copying recent data
-        new_max = deque_len_for_window(minutes)
-        def resize(old):
-            d = deque(old, maxlen=new_max)
-            return d
-        t_buf     = resize(t_buf)
-        cpmh_buf  = resize(cpmh_buf)
-        cpml_buf  = resize(cpml_buf)
-        emf_buf   = resize(emf_buf)
-        rf_buf    = resize(rf_buf)
-        ef_buf    = resize(ef_buf)
-        vel_buf   = resize(vel_buf)
-        alt_buf   = resize(alt_buf)
+        # Deques are sized for MAX_WINDOW_MIN, so just change the display window
+        # The plot will automatically show the correct time range in update_gui()
 
     def update_gui(self):
         # Pull GPS with timeout
