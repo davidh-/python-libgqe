@@ -228,7 +228,7 @@ def _read_response_bg(ser, first_deadline_s=0.25, gap_s=0.02):
         return ""
 
 def emf_reader_loop():
-    global emf_value, ef_value, rf_value
+    global emf_value, ef_value, rf_value, ser_390, port_390
     if not ser_390:
         logger.warning("EMF reader loop exiting: ser_390 not available")
         return
@@ -236,6 +236,8 @@ def emf_reader_loop():
     consecutive_errors = 0
     max_consecutive_errors = 10
     read_count = 0
+    reconnect_attempts = 0
+    max_reconnect_attempts = 3
     while True:
         try:
             try: ser_390.reset_input_buffer()
@@ -247,6 +249,7 @@ def emf_reader_loop():
                     v = float(r.split(' ')[2])
                     with emf_lock: emf_value = v
                     consecutive_errors = 0  # Reset on success
+                    reconnect_attempts = 0  # Reset reconnect attempts on success
                     read_count += 1
                     if read_count % 100 == 0:
                         logger.debug(f"EMF reader: {read_count} successful reads, current EMF={v:.3f}")
@@ -275,6 +278,45 @@ def emf_reader_loop():
                 except Exception as parse_err:
                     logger.warning(f"EMF reader: Failed to parse RF response '{r}': {parse_err}")
             time.sleep(0.01)
+        except serial.SerialException as e:
+            consecutive_errors += 1
+            logger.error(f"EMF reader: Serial error #{consecutive_errors}: {type(e).__name__}: {e}")
+
+            # Try to recover from serial connection failure
+            if "Input/output error" in str(e) or "write failed" in str(e):
+                logger.warning("EMF reader: Detected I/O error, attempting to reconnect...")
+                try:
+                    if ser_390:
+                        ser_390.close()
+                        logger.info("EMF reader: Closed broken serial connection")
+                except Exception as close_err:
+                    logger.error(f"EMF reader: Error closing serial: {close_err}")
+
+                # Try to reconnect
+                reconnect_attempts += 1
+                if reconnect_attempts <= max_reconnect_attempts and port_390:
+                    logger.info(f"EMF reader: Reconnect attempt {reconnect_attempts}/{max_reconnect_attempts} to {port_390}")
+                    try:
+                        ser_390 = serial.Serial(port_390, BAUD_RATE, timeout=0.5, write_timeout=1.0)
+                        logger.info(f"EMF reader: Successfully reconnected to {port_390}")
+                        print(f"EMF reader: Reconnected to {port_390}")
+                        consecutive_errors = 0  # Reset errors on successful reconnect
+                        time.sleep(0.5)  # Brief pause before resuming
+                        continue
+                    except Exception as reconnect_err:
+                        logger.error(f"EMF reader: Reconnect failed: {reconnect_err}")
+                        ser_390 = None
+                        time.sleep(2)  # Wait longer before retrying
+                else:
+                    logger.critical(f"EMF reader: Max reconnect attempts reached ({max_reconnect_attempts}), will retry later")
+                    reconnect_attempts = 0  # Reset for next cycle
+                    time.sleep(5)  # Wait longer before retrying
+
+            if consecutive_errors >= max_consecutive_errors:
+                logger.critical(f"EMF reader: Too many consecutive errors ({consecutive_errors}), continuing with backoff")
+                print(f"EMF reader: Too many consecutive errors ({consecutive_errors}), last error: {e}")
+                consecutive_errors = 0  # Reset to avoid spam
+            time.sleep(0.5)  # Longer sleep on error
         except Exception as e:
             consecutive_errors += 1
             logger.error(f"EMF reader: Error #{consecutive_errors}: {type(e).__name__}: {e}")
@@ -285,7 +327,7 @@ def emf_reader_loop():
             time.sleep(0.5)  # Longer sleep on error
 
 def cpm_reader_loop():
-    global cpm_h_value, cpm_l_value
+    global cpm_h_value, cpm_l_value, ser_500, port_500
     if not ser_500:
         logger.warning("CPM reader loop exiting: ser_500 not available")
         return
@@ -293,6 +335,8 @@ def cpm_reader_loop():
     consecutive_errors = 0
     max_consecutive_errors = 10
     read_count = 0
+    reconnect_attempts = 0
+    max_reconnect_attempts = 3
     while True:
         try:
             try: ser_500.reset_input_buffer()
@@ -304,6 +348,7 @@ def cpm_reader_loop():
                     v = int.from_bytes(resp, "big")
                     with cpm_lock: cpm_h_value = float(v)
                     consecutive_errors = 0  # Reset on success
+                    reconnect_attempts = 0  # Reset reconnect attempts on success
                     read_count += 1
                     if read_count % 100 == 0:
                         logger.debug(f"CPM reader: {read_count} successful reads, current CPM_H={v}")
@@ -323,6 +368,45 @@ def cpm_reader_loop():
             else:
                 logger.warning(f"CPM reader: CPM_L response wrong length (expected 4, got {len(resp)})")
             time.sleep(0.02)
+        except serial.SerialException as e:
+            consecutive_errors += 1
+            logger.error(f"CPM reader: Serial error #{consecutive_errors}: {type(e).__name__}: {e}")
+
+            # Try to recover from serial connection failure
+            if "Input/output error" in str(e) or "write failed" in str(e):
+                logger.warning("CPM reader: Detected I/O error, attempting to reconnect...")
+                try:
+                    if ser_500:
+                        ser_500.close()
+                        logger.info("CPM reader: Closed broken serial connection")
+                except Exception as close_err:
+                    logger.error(f"CPM reader: Error closing serial: {close_err}")
+
+                # Try to reconnect
+                reconnect_attempts += 1
+                if reconnect_attempts <= max_reconnect_attempts and port_500:
+                    logger.info(f"CPM reader: Reconnect attempt {reconnect_attempts}/{max_reconnect_attempts} to {port_500}")
+                    try:
+                        ser_500 = serial.Serial(port_500, BAUD_RATE, timeout=0.5, write_timeout=1.0)
+                        logger.info(f"CPM reader: Successfully reconnected to {port_500}")
+                        print(f"CPM reader: Reconnected to {port_500}")
+                        consecutive_errors = 0  # Reset errors on successful reconnect
+                        time.sleep(0.5)  # Brief pause before resuming
+                        continue
+                    except Exception as reconnect_err:
+                        logger.error(f"CPM reader: Reconnect failed: {reconnect_err}")
+                        ser_500 = None
+                        time.sleep(2)  # Wait longer before retrying
+                else:
+                    logger.critical(f"CPM reader: Max reconnect attempts reached ({max_reconnect_attempts}), will retry later")
+                    reconnect_attempts = 0  # Reset for next cycle
+                    time.sleep(5)  # Wait longer before retrying
+
+            if consecutive_errors >= max_consecutive_errors:
+                logger.critical(f"CPM reader: Too many consecutive errors ({consecutive_errors}), continuing with backoff")
+                print(f"CPM reader: Too many consecutive errors ({consecutive_errors}), last error: {e}")
+                consecutive_errors = 0  # Reset to avoid spam
+            time.sleep(0.5)  # Longer sleep on error
         except Exception as e:
             consecutive_errors += 1
             logger.error(f"CPM reader: Error #{consecutive_errors}: {type(e).__name__}: {e}")
