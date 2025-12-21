@@ -2,12 +2,22 @@
 import os, sys, time, datetime, subprocess
 from collections import deque
 from threading import Thread, Lock
+import signal
+import logging
 
 import serial
 import gpsd
 
 from PyQt5 import QtCore, QtWidgets
 import pyqtgraph as pg
+
+# Setup logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 # Import API server
 try:
@@ -33,74 +43,150 @@ DATA_FILE = os.path.join(DATA_DIR, tstamp + ".csv")
 with open(DATA_FILE, "w") as f:
     f.write("date-time,cpm_h,cpm_l,emf,rf,ef,altitude,latitude,longitude,velocity\n")
 
-# Connect to gpsd
-gpsd.connect()
+# Timeout handler for potentially blocking operations
+class TimeoutError(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise TimeoutError("Operation timed out")
+
+# Connect to gpsd with timeout
+logger.info("Attempting to connect to gpsd...")
+gpsd_available = False
+try:
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(5)  # 5 second timeout
+    gpsd.connect()
+    signal.alarm(0)  # Cancel alarm
+    gpsd_available = True
+    logger.info("Successfully connected to gpsd")
+    print("Successfully connected to gpsd")
+except TimeoutError:
+    logger.warning("gpsd connection timed out after 5 seconds. GPS data will not be available.")
+    print("Warning: gpsd connection timed out. GPS data will not be available.")
+    gpsd_available = False
+except Exception as e:
+    logger.error(f"Failed to connect to gpsd: {type(e).__name__}: {e}")
+    print(f"Warning: Failed to connect to gpsd: {e}. GPS data will not be available.")
+    gpsd_available = False
 
 # --------------------------- Device bring-up ---------------------------
 def detect_gmc500(port_500, port_390):
+    logger.info(f"Starting GMC-500+ detection on port {port_500}")
     stop_try_500 = False
-    while True:
+    max_attempts = 2
+    attempt = 0
+    while attempt < max_attempts:
+        attempt += 1
+        logger.debug(f"GMC-500+ detection attempt {attempt}/{max_attempts} on port {port_500}")
         try:
-            ser = serial.Serial(port_500, BAUD_RATE, timeout=1)
+            ser = serial.Serial(port_500, BAUD_RATE, timeout=2)
             ser.write(b'<POWERON>>')
             time.sleep(0.5)
             ser.write(b'<GETVER>>')
             resp = ser.read(17).decode("utf-8")
             ser.close()
+            logger.debug(f"GMC-500+ response: '{resp}'")
             if resp == "GMC-500+Re 2.42":
+                logger.info(f"GMC-500+ detected successfully on port {port_500}")
                 print(f"Successful port and power on for GMC-500+. Port {port_500}")
                 return port_500, port_390
             elif stop_try_500:
+                logger.warning("GMC-500+ command failed, skipping")
                 print("Error: Unable to execute command for GMC-500+. Skipping.")
                 return port_500, port_390
             else:
+                logger.info(f"GMC-500+ not found on {port_500}, swapping to {port_390}")
                 print("Error: GMC-500+ not on port. Swapping ports and retrying...")
                 port_500, port_390 = port_390, port_500
                 stop_try_500 = True
         except Exception as e:
+            logger.error(f"GMC-500+ detection error on {port_500}: {type(e).__name__}: {e}")
             if stop_try_500:
                 print(f"Final failure GMC-500+: {e}")
                 return port_500, port_390
             print(f"GMC-500+ try failed ({e}), swapping once...")
             port_500, port_390 = port_390, port_500
             stop_try_500 = True
+    logger.error("GMC-500+ detection failed after max attempts")
+    print("Error: Unable to detect GMC-500+ after max attempts.")
+    return port_500, port_390
 
 def detect_emf390(port_390):
+    logger.info(f"Starting EMF390 detection on port {port_390}")
     stop_try_390 = False
-    while True:
+    max_attempts = 2
+    attempt = 0
+    while attempt < max_attempts:
+        attempt += 1
+        logger.debug(f"EMF390 detection attempt {attempt}/{max_attempts} on port {port_390}")
         try:
-            ser = serial.Serial(port_390, BAUD_RATE, timeout=1)
+            ser = serial.Serial(port_390, BAUD_RATE, timeout=2)
             ser.write(b'<POWERON>>')
             time.sleep(2)
             ser.write(b'<GETVER>>')
             resp = ser.read(20).decode("utf-8")
+            logger.debug(f"EMF390 response: '{resp}'")
             if resp == "GQ-EMF390v2Re 3.70\r\n":
+                logger.info(f"EMF390 detected successfully on port {port_390}")
                 print(f"Successful port and power on for EMF390. Port {port_390}")
                 ser.close()
                 return port_390
             elif stop_try_390:
+                logger.warning("EMF390 command failed, check connections")
                 print("Error: Unable to execute command for EMF390. Check connections.")
                 ser.close()
                 return None
             else:
+                logger.info(f"EMF390 not found on {port_390}, trying /dev/ttyUSB0")
                 print("EMF390 not found on default, trying /dev/ttyUSB0 ...")
                 ser.close()
                 port_390 = "/dev/ttyUSB0"
                 stop_try_390 = True
         except Exception as e:
+            logger.error(f"EMF390 detection error on {port_390}: {type(e).__name__}: {e}")
             if stop_try_390:
                 print(f"Final failure EMF390: {e}")
                 return None
             print(f"EMF390 try failed ({e}), switching to /dev/ttyUSB0 once...")
             port_390 = "/dev/ttyUSB0"
             stop_try_390 = True
+    logger.error("EMF390 detection failed after max attempts")
+    print("Error: Unable to detect EMF390 after max attempts.")
+    return None
 
 port_500, port_390 = detect_gmc500(PORT_500_DEFAULT, PORT_390_DEFAULT)
 port_390 = detect_emf390(port_390)
 
-# Persistent serial if available
-ser_390 = serial.Serial(port_390, BAUD_RATE, timeout=0.2) if port_390 else None
-ser_500 = serial.Serial(port_500, BAUD_RATE, timeout=0.5) if port_500 else None
+# Persistent serial if available (with error handling)
+logger.info("Opening persistent serial connections...")
+ser_390 = None
+ser_500 = None
+try:
+    if port_390:
+        logger.debug(f"Opening EMF390 serial on {port_390} (baud={BAUD_RATE}, timeout=0.5s, write_timeout=1.0s)")
+        ser_390 = serial.Serial(port_390, BAUD_RATE, timeout=0.5, write_timeout=1.0)
+        logger.info(f"Opened persistent serial connection for EMF390 on {port_390}")
+        print(f"Opened persistent serial connection for EMF390 on {port_390}")
+    else:
+        logger.warning("No EMF390 port available, EMF390 serial will not be opened")
+except Exception as e:
+    logger.error(f"Failed to open EMF390 serial connection: {type(e).__name__}: {e}")
+    print(f"Failed to open EMF390 serial connection: {e}")
+    ser_390 = None
+
+try:
+    if port_500:
+        logger.debug(f"Opening GMC-500+ serial on {port_500} (baud={BAUD_RATE}, timeout=0.5s, write_timeout=1.0s)")
+        ser_500 = serial.Serial(port_500, BAUD_RATE, timeout=0.5, write_timeout=1.0)
+        logger.info(f"Opened persistent serial connection for GMC-500+ on {port_500}")
+        print(f"Opened persistent serial connection for GMC-500+ on {port_500}")
+    else:
+        logger.warning("No GMC-500+ port available, GMC-500+ serial will not be opened")
+except Exception as e:
+    logger.error(f"Failed to open GMC-500+ serial connection: {type(e).__name__}: {e}")
+    print(f"Failed to open GMC-500+ serial connection: {e}")
+    ser_500 = None
 
 # --------------------------- Background readers -----------------------
 emf_value = 0.0
@@ -144,7 +230,12 @@ def _read_response_bg(ser, first_deadline_s=0.25, gap_s=0.02):
 def emf_reader_loop():
     global emf_value, ef_value, rf_value
     if not ser_390:
+        logger.warning("EMF reader loop exiting: ser_390 not available")
         return
+    logger.info("EMF reader loop started")
+    consecutive_errors = 0
+    max_consecutive_errors = 10
+    read_count = 0
     while True:
         try:
             try: ser_390.reset_input_buffer()
@@ -155,7 +246,12 @@ def emf_reader_loop():
                 try:
                     v = float(r.split(' ')[2])
                     with emf_lock: emf_value = v
-                except: pass
+                    consecutive_errors = 0  # Reset on success
+                    read_count += 1
+                    if read_count % 100 == 0:
+                        logger.debug(f"EMF reader: {read_count} successful reads, current EMF={v:.3f}")
+                except Exception as parse_err:
+                    logger.warning(f"EMF reader: Failed to parse EMF response '{r}': {parse_err}")
 
             try: ser_390.reset_input_buffer()
             except: pass
@@ -165,7 +261,8 @@ def emf_reader_loop():
                 try:
                     v = float(r.split(' ')[2])
                     with emf_lock: ef_value = v
-                except: pass
+                except Exception as parse_err:
+                    logger.warning(f"EMF reader: Failed to parse EF response '{r}': {parse_err}")
 
             try: ser_390.reset_input_buffer()
             except: pass
@@ -175,15 +272,27 @@ def emf_reader_loop():
                 try:
                     v = float(r.split(' ')[0])
                     with emf_lock: rf_value = v
-                except: pass
+                except Exception as parse_err:
+                    logger.warning(f"EMF reader: Failed to parse RF response '{r}': {parse_err}")
             time.sleep(0.01)
-        except Exception:
-            time.sleep(0.05)
+        except Exception as e:
+            consecutive_errors += 1
+            logger.error(f"EMF reader: Error #{consecutive_errors}: {type(e).__name__}: {e}")
+            if consecutive_errors >= max_consecutive_errors:
+                logger.critical(f"EMF reader: Too many consecutive errors ({consecutive_errors}), continuing with backoff")
+                print(f"EMF reader: Too many consecutive errors ({consecutive_errors}), last error: {e}")
+                consecutive_errors = 0  # Reset to avoid spam
+            time.sleep(0.5)  # Longer sleep on error
 
 def cpm_reader_loop():
     global cpm_h_value, cpm_l_value
     if not ser_500:
+        logger.warning("CPM reader loop exiting: ser_500 not available")
         return
+    logger.info("CPM reader loop started")
+    consecutive_errors = 0
+    max_consecutive_errors = 10
+    read_count = 0
     while True:
         try:
             try: ser_500.reset_input_buffer()
@@ -194,7 +303,14 @@ def cpm_reader_loop():
                 try:
                     v = int.from_bytes(resp, "big")
                     with cpm_lock: cpm_h_value = float(v)
-                except: pass
+                    consecutive_errors = 0  # Reset on success
+                    read_count += 1
+                    if read_count % 100 == 0:
+                        logger.debug(f"CPM reader: {read_count} successful reads, current CPM_H={v}")
+                except Exception as parse_err:
+                    logger.warning(f"CPM reader: Failed to parse CPM_H response (len={len(resp)}): {parse_err}")
+            else:
+                logger.warning(f"CPM reader: CPM_H response wrong length (expected 4, got {len(resp)})")
 
             ser_500.write(b'<GETCPML>>')
             resp = ser_500.read(4)
@@ -202,13 +318,24 @@ def cpm_reader_loop():
                 try:
                     v = int.from_bytes(resp, "big")
                     with cpm_lock: cpm_l_value = float(v)
-                except: pass
+                except Exception as parse_err:
+                    logger.warning(f"CPM reader: Failed to parse CPM_L response (len={len(resp)}): {parse_err}")
+            else:
+                logger.warning(f"CPM reader: CPM_L response wrong length (expected 4, got {len(resp)})")
             time.sleep(0.02)
-        except Exception:
-            time.sleep(0.05)
+        except Exception as e:
+            consecutive_errors += 1
+            logger.error(f"CPM reader: Error #{consecutive_errors}: {type(e).__name__}: {e}")
+            if consecutive_errors >= max_consecutive_errors:
+                logger.critical(f"CPM reader: Too many consecutive errors ({consecutive_errors}), continuing with backoff")
+                print(f"CPM reader: Too many consecutive errors ({consecutive_errors}), last error: {e}")
+                consecutive_errors = 0  # Reset to avoid spam
+            time.sleep(0.5)  # Longer sleep on error
 
+logger.info("Starting background reader threads...")
 Thread(target=emf_reader_loop, daemon=True).start()
 Thread(target=cpm_reader_loop, daemon=True).start()
+logger.info("Background reader threads started")
 
 # ------------------------------- Data ---------------------------------
 # We’ll store timestamps as POSIX seconds (float) for DateAxisItem
@@ -382,19 +509,34 @@ class MainWindow(QtWidgets.QWidget):
         alt_buf   = resize(alt_buf)
 
     def update_gui(self):
-        # Pull GPS
-        try:
-            pkt = gpsd.get_current()
-            # Check if we have a valid GPS fix (mode 2 = 2D fix, mode 3 = 3D fix)
-            if pkt.mode >= 2:
-                lat, lon = pkt.position()
-                alt = (pkt.altitude() or 0.0) * 3.28084
-                vel = (pkt.hspeed or 0.0) * 2.237
-            else:
-                # No GPS fix yet
-                lat = lon = alt = vel = 0.0
-        except Exception:
-            lat = lon = alt = vel = 0.0
+        # Pull GPS with timeout
+        lat = lon = alt = vel = 0.0
+        if gpsd_available:
+            try:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(1)  # 1 second timeout for GPS read
+                pkt = gpsd.get_current()
+                signal.alarm(0)  # Cancel alarm
+                # Check if we have a valid GPS fix (mode 2 = 2D fix, mode 3 = 3D fix)
+                if pkt.mode >= 2:
+                    lat, lon = pkt.position()
+                    alt = (pkt.altitude() or 0.0) * 3.28084
+                    vel = (pkt.hspeed or 0.0) * 2.237
+                else:
+                    # No GPS fix yet
+                    lat = lon = alt = vel = 0.0
+            except TimeoutError:
+                logger.warning("GPS read timed out in update_gui")
+                pass
+            except Exception as e:
+                # "GPS not active" is expected when no GPS fix, log as debug
+                if "GPS not active" in str(e) or "UserWarning" in type(e).__name__:
+                    if not hasattr(self, '_gps_warning_logged'):
+                        logger.warning(f"GPS not active (will suppress further warnings)")
+                        self._gps_warning_logged = True
+                else:
+                    logger.error(f"GPS error in update_gui: {type(e).__name__}: {e}")
+                pass
 
         # Pull shared sensor values
         with cpm_lock:
@@ -416,19 +558,28 @@ class MainWindow(QtWidgets.QWidget):
         vel_buf.append(vel)
         alt_buf.append(alt)
 
+        # Periodic heartbeat log (every 100 updates = ~10 seconds at 100ms refresh)
+        if not hasattr(self, '_update_count'):
+            self._update_count = 0
+            logger.info("GUI update loop started")
+        self._update_count += 1
+        if self._update_count % 100 == 0:
+            logger.debug(f"GUI update #{self._update_count}: cpm_h={cpm_h:.0f}, cpm_l={cpm_l:.0f}, emf={emf:.3f}, rf={rf:.3f}, ef={ef:.3f}")
+
         # Log to CSV (fast enough; one line per tick)
         ts = datetime.datetime.fromtimestamp(now).strftime("%Y-%m-%d %H:%M:%S")
         try:
             with open(DATA_FILE, "a") as f:
                 f.write(f"{ts},{cpm_h},{cpm_l},{emf},{rf},{ef},{alt},{lat},{lon},{vel}\n")
-        except Exception:
-            pass
+        except Exception as csv_err:
+            logger.error(f"Failed to write to CSV file {DATA_FILE}: {type(csv_err).__name__}: {csv_err}")
 
         # Update API server with new data
         if API_SERVER_ENABLED:
             try:
                 api_server.update_shared_data(now, cpm_h, cpm_l, emf, rf, ef, alt, lat, lon, vel)
             except Exception as e:
+                logger.error(f"API server update failed: {type(e).__name__}: {e}")
                 pass  # Silently ignore API errors to not disrupt GUI
 
         # Update labels
@@ -476,26 +627,48 @@ class MainWindow(QtWidgets.QWidget):
                     plot.setYRange(vmin, vmax, padding=0.1)
 
     def closeEvent(self, ev):
+        logger.info("Dashboard close event triggered")
         print("Dashboard closed")
         try:
-            if ser_390: ser_390.close()
-        except: pass
+            if ser_390:
+                logger.info("Closing EMF390 serial connection")
+                ser_390.close()
+        except Exception as e:
+            logger.error(f"Error closing EMF390 serial: {e}")
         try:
-            if ser_500: ser_500.close()
-        except: pass
+            if ser_500:
+                logger.info("Closing GMC-500+ serial connection")
+                ser_500.close()
+        except Exception as e:
+            logger.error(f"Error closing GMC-500+ serial: {e}")
+        logger.info("Dashboard closed, exiting")
         return super().closeEvent(ev)
 
 # ------------------------------- Main ---------------------------------
 if __name__ == "__main__":
+    logger.info("="*60)
+    logger.info("ELDAEON Graph Faster Data Logger starting...")
+    logger.info("="*60)
+
     # Start API server in background thread
     if API_SERVER_ENABLED:
+        logger.info("Starting API server thread...")
         api_thread = Thread(target=api_server.run_server, kwargs={'host': '0.0.0.0', 'port': 5000}, daemon=True)
         api_thread.start()
+        logger.info("API server thread started")
         print("API server started in background")
+    else:
+        logger.warning("API server not enabled (module not found)")
 
+    logger.info("Creating Qt application...")
     app = QtWidgets.QApplication(sys.argv)
     # Better default look
     pg.setConfigOptions(antialias=True)
+    logger.info("Creating main window...")
     win = MainWindow()
+    logger.info("Showing main window...")
     win.show()
-    sys.exit(app.exec_())
+    logger.info("Entering Qt event loop...")
+    exit_code = app.exec_()
+    logger.info(f"Qt event loop exited with code {exit_code}")
+    sys.exit(exit_code)
