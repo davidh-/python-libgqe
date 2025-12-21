@@ -195,8 +195,13 @@ rf_value  = 0.0
 cpm_h_value = 0.0
 cpm_l_value = 0.0
 
+# Device connection status
+emf_connected = True
+cpm_connected = True
+
 emf_lock = Lock()
 cpm_lock = Lock()
+status_lock = Lock()
 
 def _read_response_bg(ser, first_deadline_s=0.25, gap_s=0.02):
     deadline = time.time() + first_deadline_s
@@ -228,7 +233,7 @@ def _read_response_bg(ser, first_deadline_s=0.25, gap_s=0.02):
         return ""
 
 def emf_reader_loop():
-    global emf_value, ef_value, rf_value, ser_390, port_390
+    global emf_value, ef_value, rf_value, ser_390, port_390, emf_connected
     if not ser_390:
         logger.warning("EMF reader loop exiting: ser_390 not available")
         return
@@ -239,6 +244,42 @@ def emf_reader_loop():
     reconnect_attempts = 0
     max_reconnect_attempts = 3
     while True:
+        # Check if serial port is None and try to reconnect
+        if ser_390 is None and port_390:
+            # Mark as disconnected
+            with status_lock:
+                emf_connected = False
+
+            reconnect_attempts += 1
+            if reconnect_attempts <= max_reconnect_attempts:
+                logger.info(f"EMF reader: Serial port is None, reconnect attempt {reconnect_attempts}/{max_reconnect_attempts} to {port_390}")
+                try:
+                    ser_390 = serial.Serial(port_390, BAUD_RATE, timeout=0.5, write_timeout=1.0)
+                    logger.info(f"EMF reader: Successfully reconnected to {port_390}")
+                    print(f"EMF reader: Reconnected to {port_390}")
+                    with status_lock:
+                        emf_connected = True
+                    consecutive_errors = 0
+                    reconnect_attempts = 0  # Reset on success
+                    time.sleep(0.5)
+                except Exception as reconnect_err:
+                    logger.error(f"EMF reader: Reconnect failed: {reconnect_err}")
+                    ser_390 = None
+                    time.sleep(2)
+                    continue
+            else:
+                logger.warning(f"EMF reader: Max reconnect attempts reached, waiting before retry")
+                reconnect_attempts = 0  # Reset for next cycle
+                time.sleep(5)
+                continue
+
+        # Skip reading if serial port is still None
+        if ser_390 is None:
+            with status_lock:
+                emf_connected = False
+            time.sleep(1)
+            continue
+
         try:
             try: ser_390.reset_input_buffer()
             except: pass
@@ -285,6 +326,11 @@ def emf_reader_loop():
             # Try to recover from serial connection failure
             if "Input/output error" in str(e) or "write failed" in str(e):
                 logger.warning("EMF reader: Detected I/O error, attempting to reconnect...")
+
+                # Mark as disconnected
+                with status_lock:
+                    emf_connected = False
+
                 try:
                     if ser_390:
                         ser_390.close()
@@ -300,6 +346,8 @@ def emf_reader_loop():
                         ser_390 = serial.Serial(port_390, BAUD_RATE, timeout=0.5, write_timeout=1.0)
                         logger.info(f"EMF reader: Successfully reconnected to {port_390}")
                         print(f"EMF reader: Reconnected to {port_390}")
+                        with status_lock:
+                            emf_connected = True
                         consecutive_errors = 0  # Reset errors on successful reconnect
                         time.sleep(0.5)  # Brief pause before resuming
                         continue
@@ -327,7 +375,7 @@ def emf_reader_loop():
             time.sleep(0.5)  # Longer sleep on error
 
 def cpm_reader_loop():
-    global cpm_h_value, cpm_l_value, ser_500, port_500
+    global cpm_h_value, cpm_l_value, ser_500, port_500, cpm_connected
     if not ser_500:
         logger.warning("CPM reader loop exiting: ser_500 not available")
         return
@@ -338,6 +386,42 @@ def cpm_reader_loop():
     reconnect_attempts = 0
     max_reconnect_attempts = 3
     while True:
+        # Check if serial port is None and try to reconnect
+        if ser_500 is None and port_500:
+            # Mark as disconnected
+            with status_lock:
+                cpm_connected = False
+
+            reconnect_attempts += 1
+            if reconnect_attempts <= max_reconnect_attempts:
+                logger.info(f"CPM reader: Serial port is None, reconnect attempt {reconnect_attempts}/{max_reconnect_attempts} to {port_500}")
+                try:
+                    ser_500 = serial.Serial(port_500, BAUD_RATE, timeout=0.5, write_timeout=1.0)
+                    logger.info(f"CPM reader: Successfully reconnected to {port_500}")
+                    print(f"CPM reader: Reconnected to {port_500}")
+                    with status_lock:
+                        cpm_connected = True
+                    consecutive_errors = 0
+                    reconnect_attempts = 0  # Reset on success
+                    time.sleep(0.5)
+                except Exception as reconnect_err:
+                    logger.error(f"CPM reader: Reconnect failed: {reconnect_err}")
+                    ser_500 = None
+                    time.sleep(2)
+                    continue
+            else:
+                logger.warning(f"CPM reader: Max reconnect attempts reached, waiting before retry")
+                reconnect_attempts = 0  # Reset for next cycle
+                time.sleep(5)
+                continue
+
+        # Skip reading if serial port is still None
+        if ser_500 is None:
+            with status_lock:
+                cpm_connected = False
+            time.sleep(1)
+            continue
+
         try:
             try: ser_500.reset_input_buffer()
             except: pass
@@ -375,6 +459,11 @@ def cpm_reader_loop():
             # Try to recover from serial connection failure
             if "Input/output error" in str(e) or "write failed" in str(e):
                 logger.warning("CPM reader: Detected I/O error, attempting to reconnect...")
+
+                # Mark as disconnected
+                with status_lock:
+                    cpm_connected = False
+
                 try:
                     if ser_500:
                         ser_500.close()
@@ -390,6 +479,8 @@ def cpm_reader_loop():
                         ser_500 = serial.Serial(port_500, BAUD_RATE, timeout=0.5, write_timeout=1.0)
                         logger.info(f"CPM reader: Successfully reconnected to {port_500}")
                         print(f"CPM reader: Reconnected to {port_500}")
+                        with status_lock:
+                            cpm_connected = True
                         consecutive_errors = 0  # Reset errors on successful reconnect
                         time.sleep(0.5)  # Brief pause before resuming
                         continue
@@ -517,6 +608,12 @@ class MainWindow(QtWidgets.QWidget):
         self.val_vel    = QtWidgets.QLabel("- mph")
         self.val_alt    = QtWidgets.QLabel("- ft")
 
+        # Device connection status labels
+        self.status_emf = QtWidgets.QLabel("EMF: Connected")
+        self.status_emf.setStyleSheet("color: #27ae60; font-weight: 600;")  # Green when connected
+        self.status_cpm = QtWidgets.QLabel("CPM: Connected")
+        self.status_cpm.setStyleSheet("color: #27ae60; font-weight: 600;")  # Green when connected
+
         for w in [self.val_cpmh, self.val_cpml, self.val_emf, self.val_rf, self.val_ef, self.val_vel, self.val_alt]:
             w.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             w.setMinimumWidth(90)
@@ -536,6 +633,10 @@ class MainWindow(QtWidgets.QWidget):
 
         head = QtWidgets.QHBoxLayout()
         head.addWidget(self.lbl_latlon, 1)
+
+        # Device status indicators
+        head.addWidget(self.status_emf)
+        head.addWidget(self.status_cpm)
 
         # Time window chooser
         self.window_choice = QtWidgets.QComboBox()
@@ -631,6 +732,11 @@ class MainWindow(QtWidgets.QWidget):
             ef  = float(ef_value)
             rf  = float(rf_value)
 
+        # Pull device connection status
+        with status_lock:
+            emf_conn = emf_connected
+            cpm_conn = cpm_connected
+
         # Append to buffers
         now = time.time()
         t_buf.append(now)
@@ -661,7 +767,7 @@ class MainWindow(QtWidgets.QWidget):
         # Update API server with new data
         if API_SERVER_ENABLED:
             try:
-                api_server.update_shared_data(now, cpm_h, cpm_l, emf, rf, ef, alt, lat, lon, vel)
+                api_server.update_shared_data(now, cpm_h, cpm_l, emf, rf, ef, alt, lat, lon, vel, emf_conn, cpm_conn)
             except Exception as e:
                 logger.error(f"API server update failed: {type(e).__name__}: {e}")
                 pass  # Silently ignore API errors to not disrupt GUI
@@ -675,6 +781,21 @@ class MainWindow(QtWidgets.QWidget):
         self.val_ef.setText(f"{ef:.3f} V/m")
         self.val_vel.setText(f"{vel:.1f} mph")
         self.val_alt.setText(f"{alt:.1f} ft")
+
+        # Update device status labels
+        if emf_conn:
+            self.status_emf.setText("EMF: Connected")
+            self.status_emf.setStyleSheet("color: #27ae60; font-weight: 600;")  # Green
+        else:
+            self.status_emf.setText("EMF: DISCONNECTED")
+            self.status_emf.setStyleSheet("color: #e74c3c; font-weight: 600;")  # Red
+
+        if cpm_conn:
+            self.status_cpm.setText("CPM: Connected")
+            self.status_cpm.setStyleSheet("color: #27ae60; font-weight: 600;")  # Green
+        else:
+            self.status_cpm.setText("CPM: DISCONNECTED")
+            self.status_cpm.setStyleSheet("color: #e74c3c; font-weight: 600;")  # Red
 
         # Update curves (use list() to give PyQtGraph a contiguous array-like)
         if len(t_buf) > 1:

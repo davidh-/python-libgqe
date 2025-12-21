@@ -27,7 +27,9 @@ shared_data = {
         'altitude': 0.0,
         'latitude': 0.0,
         'longitude': 0.0,
-        'velocity': 0.0
+        'velocity': 0.0,
+        'emf_connected': True,
+        'cpm_connected': True
     },
     'history': {
         'timestamps': [],
@@ -47,7 +49,7 @@ ws_clients = set()
 ws_lock = Lock()
 
 
-def update_shared_data(timestamp, cpm_h, cpm_l, emf, rf, ef, altitude, latitude, longitude, velocity):
+def update_shared_data(timestamp, cpm_h, cpm_l, emf, rf, ef, altitude, latitude, longitude, velocity, emf_connected=True, cpm_connected=True):
     """Called by graph_faster.py to update sensor data"""
     with data_lock:
         # Update current values
@@ -61,7 +63,9 @@ def update_shared_data(timestamp, cpm_h, cpm_l, emf, rf, ef, altitude, latitude,
             'altitude': altitude,
             'latitude': latitude,
             'longitude': longitude,
-            'velocity': velocity
+            'velocity': velocity,
+            'emf_connected': emf_connected,
+            'cpm_connected': cpm_connected
         }
 
         # Update history (keep last 1000 points)
