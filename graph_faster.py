@@ -50,25 +50,41 @@ class TimeoutError(Exception):
 def timeout_handler(signum, frame):
     raise TimeoutError("Operation timed out")
 
-# Connect to gpsd with timeout
-logger.info("Attempting to connect to gpsd...")
+# GPS connection state
 gpsd_available = False
-try:
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(5)  # 5 second timeout
-    gpsd.connect()
-    signal.alarm(0)  # Cancel alarm
-    gpsd_available = True
-    logger.info("Successfully connected to gpsd")
+gpsd_last_good = 0  # timestamp of last successful GPS read
+gpsd_fail_count = 0  # consecutive failures
+GPS_RECONNECT_THRESHOLD = 10  # reconnect after this many consecutive failures
+GPS_RECONNECT_INTERVAL = 30  # minimum seconds between reconnection attempts
+gpsd_last_reconnect = 0
+
+def connect_gpsd():
+    """Connect to gpsd with timeout. Returns True if successful."""
+    global gpsd_available, gpsd_last_reconnect
+    gpsd_last_reconnect = time.time()
+    try:
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(5)  # 5 second timeout
+        gpsd.connect()
+        signal.alarm(0)  # Cancel alarm
+        gpsd_available = True
+        logger.info("Successfully connected to gpsd")
+        return True
+    except TimeoutError:
+        logger.warning("gpsd connection timed out after 5 seconds")
+        gpsd_available = False
+        return False
+    except Exception as e:
+        logger.error(f"Failed to connect to gpsd: {type(e).__name__}: {e}")
+        gpsd_available = False
+        return False
+
+# Initial gpsd connection
+logger.info("Attempting to connect to gpsd...")
+if connect_gpsd():
     print("Successfully connected to gpsd")
-except TimeoutError:
-    logger.warning("gpsd connection timed out after 5 seconds. GPS data will not be available.")
-    print("Warning: gpsd connection timed out. GPS data will not be available.")
-    gpsd_available = False
-except Exception as e:
-    logger.error(f"Failed to connect to gpsd: {type(e).__name__}: {e}")
-    print(f"Warning: Failed to connect to gpsd: {e}. GPS data will not be available.")
-    gpsd_available = False
+else:
+    print("Warning: gpsd connection failed. Will retry during operation.")
 
 # --------------------------- Device bring-up ---------------------------
 def detect_gmc500(port_500, port_390):
@@ -686,8 +702,18 @@ class MainWindow(QtWidgets.QWidget):
         # The plot will automatically show the correct time range in update_gui()
 
     def update_gui(self):
+        global gpsd_available, gpsd_last_good, gpsd_fail_count, gpsd_last_reconnect
+
         # Pull GPS with timeout
         lat = lon = alt = vel = 0.0
+        gps_success = False
+
+        # Try to reconnect if not available and enough time has passed
+        if not gpsd_available:
+            if time.time() - gpsd_last_reconnect >= GPS_RECONNECT_INTERVAL:
+                logger.info("Attempting to reconnect to gpsd...")
+                connect_gpsd()
+
         if gpsd_available:
             try:
                 signal.signal(signal.SIGALRM, timeout_handler)
@@ -699,13 +725,20 @@ class MainWindow(QtWidgets.QWidget):
                     lat, lon = pkt.position()
                     alt = (pkt.altitude() or 0.0) * 3.28084
                     vel = (pkt.hspeed or 0.0) * 2.237
+                    # Only count as success if we got valid coordinates
+                    if lat != 0.0 or lon != 0.0:
+                        gps_success = True
+                        gpsd_fail_count = 0
+                        gpsd_last_good = time.time()
+                        self._gps_warning_logged = False  # Reset warning suppression
                 else:
-                    # No GPS fix yet
+                    # No GPS fix yet - not a connection failure
                     lat = lon = alt = vel = 0.0
             except TimeoutError:
                 logger.warning("GPS read timed out in update_gui")
-                pass
+                gpsd_fail_count += 1
             except Exception as e:
+                gpsd_fail_count += 1
                 # "GPS not active" is expected when no GPS fix, log as debug
                 if "GPS not active" in str(e) or "UserWarning" in type(e).__name__:
                     if not hasattr(self, '_gps_warning_logged'):
@@ -713,7 +746,12 @@ class MainWindow(QtWidgets.QWidget):
                         self._gps_warning_logged = True
                 else:
                     logger.error(f"GPS error in update_gui: {type(e).__name__}: {e}")
-                pass
+
+            # If too many consecutive failures, mark as unavailable to trigger reconnect
+            if gpsd_fail_count >= GPS_RECONNECT_THRESHOLD:
+                logger.warning(f"GPS failed {gpsd_fail_count} times, marking for reconnection")
+                gpsd_available = False
+                gpsd_fail_count = 0
 
         # Pull shared sensor values
         with cpm_lock:
